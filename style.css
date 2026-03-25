@@ -1,28 +1,222 @@
+/* === GLOBAL RESET & BASE === */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+
 body {
-    background-color: #0d1117; /* Deep ocean dark background */
+    background-color: #050b14;
     color: #c9d1d9;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
-    margin: 0;
 }
 
-#game-container {
+.hidden { display: none !important; }
+
+/* === SCREEN 1: INTRO VIDEO === */
+#screen-intro {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#trailer-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#skip-hint {
+    position: absolute;
+    bottom: 32px;
+    left: 32px;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.55);
+    letter-spacing: 0.05em;
+    animation: pulse 2.5s ease-in-out infinite;
+}
+
+#skip-hint kbd {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-family: inherit;
+    color: #fff;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+/* === SCREEN 2: SETTINGS / MAIN MENU === */
+#screen-settings {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 100%, #0a1f3a 0%, #050b14 70%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Animated bubbles background */
+#screen-settings::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        radial-gradient(circle at 20% 80%, rgba(0, 200, 255, 0.04) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(0, 100, 200, 0.05) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+#settings-panel {
+    background: rgba(10, 25, 47, 0.7);
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 20px;
+    padding: 48px 64px;
+    max-width: 520px;
+    width: 90%;
+    box-shadow:
+        0 0 60px rgba(0, 150, 255, 0.08),
+        0 0 120px rgba(0, 100, 200, 0.04),
+        inset 0 1px 0 rgba(88, 166, 255, 0.1);
     text-align: center;
+    backdrop-filter: blur(12px);
 }
 
-h1 {
-    color: #58a6ff; /* Neon blue from your design doc */
-    margin-bottom: 5px;
+#settings-logo h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    background: linear-gradient(135deg, #58c4ff, #00ffe5);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 6px;
 }
 
-canvas {
-    border: 4px solid #30363d;
-    background-color: #161b22;
-    box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
+.subtitle {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 36px;
+    letter-spacing: 0.03em;
+}
+
+#keybindings h2 {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(88, 166, 255, 0.7);
+    margin-bottom: 20px;
+}
+
+.binding-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.07);
+}
+
+.binding-row:last-child { border-bottom: none; }
+
+.action-label {
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 400;
+}
+
+.key-btn {
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.3);
     border-radius: 8px;
-    display: block;
-    margin-top: 20px;
+    color: #58c4ff;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 6px 16px;
+    min-width: 80px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.key-btn:hover {
+    background: rgba(88, 166, 255, 0.18);
+    border-color: rgba(88, 196, 255, 0.6);
+    box-shadow: 0 0 12px rgba(88, 196, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+.key-btn.listening {
+    background: rgba(255, 200, 50, 0.12);
+    border-color: rgba(255, 200, 50, 0.6);
+    color: #ffc832;
+    animation: btn-pulse 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes btn-pulse {
+    from { box-shadow: 0 0 8px rgba(255, 200, 50, 0.2); }
+    to { box-shadow: 0 0 20px rgba(255, 200, 50, 0.5); }
+}
+
+#binding-hint {
+    margin-top: 16px;
+    font-size: 0.8rem;
+    color: rgba(255, 200, 50, 0.8);
+    letter-spacing: 0.05em;
+}
+
+#start-game-btn {
+    margin-top: 36px;
+    background: linear-gradient(135deg, #0070e0, #00b8d4);
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    padding: 14px 40px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    width: 100%;
+    transition: all 0.25s ease;
+    box-shadow: 0 4px 24px rgba(0, 120, 220, 0.35);
+}
+
+#start-game-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0, 180, 255, 0.5);
+    background: linear-gradient(135deg, #0080ff, #00d4ff);
+}
+
+#start-game-btn:active {
+    transform: translateY(0px);
+}
+
+/* === SCREEN 3: GAME === */
+#screen-game {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #050b14;
+}
+
+#gameCanvas {
+    border: 2px solid rgba(88, 166, 255, 0.15);
+    box-shadow: 0 0 40px rgba(0, 150, 255, 0.1);
+    border-radius: 4px;
 }

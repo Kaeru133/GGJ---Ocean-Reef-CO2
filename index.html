@@ -3,17 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ocean Reef CO2 - Predator Boost Prototype</title>
+    <title>Ocean Reef CO2</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="game-container">
-        <h1>Ocean Reef CO2</h1>
-        <p>Use <strong>Arrow Keys</strong> to move and <strong>Spacebar</strong> to Dash.</p>
-        <p>Dash into the Green Enemy to trigger the Predator Boost!</p>
+
+    <!-- ===================== SCREEN 1: INTRO VIDEO ===================== -->
+    <div id="screen-intro">
+        <video id="trailer-video" src="Assets/Videos/trailer.mp4" autoplay playsinline></video>
+        <p id="skip-hint">Press <kbd>0</kbd> to skip trailer</p>
+    </div>
+
+    <!-- ===================== SCREEN 2: SETTINGS / MAIN MENU ===================== -->
+    <div id="screen-settings" class="hidden">
+        <div id="settings-panel">
+            <div id="settings-logo">
+                <h1>OCEAN REEF CO2</h1>
+                <p class="subtitle">Configure your controls before diving in.</p>
+            </div>
+
+            <div id="keybindings">
+                <h2>Key Bindings</h2>
+
+                <div class="binding-row">
+                    <span class="action-label">Move Up</span>
+                    <button class="key-btn" id="bind-up" data-action="up">W</button>
+                </div>
+                <div class="binding-row">
+                    <span class="action-label">Move Left</span>
+                    <button class="key-btn" id="bind-left" data-action="left">A</button>
+                </div>
+                <div class="binding-row">
+                    <span class="action-label">Move Down</span>
+                    <button class="key-btn" id="bind-down" data-action="down">S</button>
+                </div>
+                <div class="binding-row">
+                    <span class="action-label">Move Right</span>
+                    <button class="key-btn" id="bind-right" data-action="right">D</button>
+                </div>
+                <div class="binding-row">
+                    <span class="action-label">Dash / Attack</span>
+                    <button class="key-btn" id="bind-dash" data-action="dash">Space</button>
+                </div>
+            </div>
+
+            <p id="binding-hint" class="hidden">Press any key to bind...</p>
+
+            <button id="start-game-btn">▶ Start Game</button>
+        </div>
+    </div>
+
+    <!-- ===================== SCREEN 3: GAME CANVAS ===================== -->
+    <div id="screen-game" class="hidden">
         <canvas id="gameCanvas" width="800" height="600"></canvas>
     </div>
-    
+
     <script src="game.js"></script>
 </body>
 </html>
