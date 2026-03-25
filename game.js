@@ -897,7 +897,7 @@ function checkLaserHits() {
 const player = {
     x: 200, y: roomFloor - 60,
     radius: 16, dx: 0, dy: 0,
-    gravity: 0.15, friction: 0.92, speed: 0.65,
+    gravity: 0.22, friction: 0.92, speed: 0.65,
     isDashing: false, canDash: true, dashTimer: 0,
     dashSpeed: 14, dashDuration: 15,
     maxHP: 5, hp: 5,
@@ -952,7 +952,7 @@ const player = {
                 const airMult = 0.32;
                 if (isHeld("left"))  this.dx -= this.speed * airMult;
                 if (isHeld("right")) this.dx += this.speed * airMult;
-                if (isHeld("up"))    this.dy -= 0.08;
+                if (isHeld("up"))    this.dy -= 0.065;
                 this.dx *= 0.988;     // Floaty inertia in air
                 this.dx += windDrift; // Wind drift
             }
@@ -1045,7 +1045,7 @@ function checkEnemyCollisions() {
 function checkVentCollisions() {
     worldVents.forEach(vent => {
         if (dist(player.x, player.y, vent.x, vent.y) < player.radius + vent.radius) {
-            if (player.isDashing) player.triggerPredatorBoost(18);
+            if (player.isDashing) player.triggerPredatorBoost(14);
         }
     });
 }
@@ -1115,7 +1115,7 @@ function teleportToRoom(roomNum) {
     if (activeRoom === 2) {
         player.x = CEILING_GAP_X + 90;
         player.y = roomFloor - 200;
-        player.dy = -15; 
+        player.dy = -9; 
         if (!hasUnlockedTentacle) {
             hasUnlockedTentacle = true;
             isAbilityModal      = true;
