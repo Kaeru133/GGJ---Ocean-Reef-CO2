@@ -109,6 +109,16 @@ window.addEventListener("keydown", (e) => {
 
     if (e.code === "Escape") { isPaused = !isPaused; return; }
     if (isPaused || isAbilityModal) return;
+
+    // Head to Stage 2 manual trigger
+    if (activeRoom === 1 && e.code === "Digit2") {
+        const teleX = CEILING_GAP_X - 60, teleY = roomCeil + 60;
+        if (Math.abs(player.x - (teleX + 40)) < 60 && Math.abs(player.y - teleY) < 80) {
+            teleportToRoom(2);
+            return;
+        }
+    }
+
     keysDown.add(e.code);
     if (e.code === controls.dash)     player.tryDash();
     if (e.code === controls.tentacle) fireTentacle();
@@ -480,14 +490,15 @@ function generateChunk(chunkIndex) {
             worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT, type, chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 5 });
         }
 
-        // STARTING PIT WALLS
+        // STARTING PIT WALLS (The two Purple Towers from drawing)
         const sChunk = getChunkIndex(CEILING_GAP_X);
         if (chunkIndex === sChunk) {
-            // High vertical barrier walls to trap player in the start pit
-            worldPlatforms.push({ x: CEILING_GAP_X - 100, y: roomFloor - 550, width: 40, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: 0 });
-            worldPlatforms.push({ x: CEILING_GAP_X + CEILING_GAP_W + 60, y: roomFloor - 550, width: 40, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: 0 });
-            // Help vent
-            worldVents.push({ x: CEILING_GAP_X + CEILING_GAP_W/2, y: roomFloor - 35, radius: 42, chunk: chunkIndex, room: activeRoom });
+            // Pillar 1 (Purple)
+            worldPlatforms.push({ x: CEILING_GAP_X - 60, y: roomFloor - 500, width: 25, height: 500, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid', color: '#9933ff' });
+            // Pillar 2 (Purple)
+            worldPlatforms.push({ x: CEILING_GAP_X + CEILING_GAP_W + 15, y: roomFloor - 500, width: 25, height: 500, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid', color: '#9933ff' });
+            // Exit point indicator
+            worldVents.push({ x: CEILING_GAP_X + CEILING_GAP_W/2, y: roomFloor - 30, radius: 45, chunk: chunkIndex, room: activeRoom });
         }
 
         // Enemies in Room 2 (Shooters + Bouncers only)
@@ -1081,8 +1092,8 @@ function drawBackground() {
     } else {
         const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
         if (activeRoom === 2) {
-            bg.addColorStop(0, "#220033"); // Purple for stage 2
-            bg.addColorStop(1, "#071e37");
+            bg.addColorStop(0, "#08001a"); // Even darker for Room 2
+            bg.addColorStop(1, "#1a0533");
         } else {
             bg.addColorStop(0, "#050b14");
             bg.addColorStop(1, "#071e37");
@@ -1166,13 +1177,21 @@ function drawFloor() {
 
     // Barrier / Spikes
     if (inUpper) {
-        // Draw the Pit Hole (passage back to Room 1)
-        const holeL = camera.toScreen(CEILING_GAP_X, 0).x;
-        const holeR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W, 0).x;
-        ctx.fillStyle = "#071e37"; // Match abyss bg
-        ctx.fillRect(holeL, floorScreen.y - 10, holeR - holeL, 40);
-
-        drawSpikes();
+        // Continuous Spikes on the left and right of the pit
+        const holeL = camera.toScreen(CEILING_GAP_X - 40, 0).x;
+        const holeR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W + 40, 0).x;
+        
+        // Draw spiked floor segments
+        drawSpikedFloor(0, holeL);
+        drawSpikedFloor(holeR, canvas.width);
+        
+        // The Pit Hole itself (purple portal at the bottom center of drawing)
+        ctx.fillStyle   = '#9933ff';
+        ctx.shadowColor = '#9933ff'; ctx.shadowBlur = 25;
+        ctx.beginPath();
+        ctx.arc(camera.toScreen(CEILING_GAP_X + CEILING_GAP_W/2, 0).x, floorScreen.y, 40, 0, Math.PI, true);
+        ctx.fill();
+        ctx.shadowBlur = 0;
     } else {
         // Simple line for Room 1
         ctx.beginPath();
@@ -1184,19 +1203,14 @@ function drawFloor() {
     }
 }
 
-function drawSpikes() {
+function drawSpikedFloor(startX, endX) {
+    if (startX >= endX) return;
     const floorY = camera.toScreen(0, roomFloor).y;
     ctx.fillStyle = "#ff2244";
-    ctx.shadowColor = "#ff0000"; ctx.shadowBlur = 15;
-    const spikeW = 20;
-    const spikeH = 24;
-    
-    // Simple spike pattern across the visible floor
-    for (let x = 0; x < canvas.width; x += spikeW) {
-        // Skip the pit hole area
-        const worldX = x + camera.x;
-        if (activeRoom === 2 && worldX > CEILING_GAP_X && worldX < CEILING_GAP_X + CEILING_GAP_W) continue;
-        
+    ctx.shadowColor = "#ff0000"; ctx.shadowBlur = 10;
+    const spikeW = 22;
+    const spikeH = 28;
+    for (let x = startX; x < endX; x += spikeW) {
         ctx.beginPath();
         ctx.moveTo(x, floorY);
         ctx.lineTo(x + spikeW / 2, floorY - spikeH);
@@ -1204,6 +1218,10 @@ function drawSpikes() {
         ctx.fill();
     }
     ctx.shadowBlur = 0;
+}
+
+function drawSpikes() {
+    // Legacy - replaced by drawSpikedFloor for segmented drawing
 }
 
 function checkSpikeHits() {
@@ -1269,24 +1287,25 @@ function drawCeiling() {
     
     // Draw and handle the Teleport Platform bridging the gap in Room 1
     if (activeRoom === 1) {
-        // Platform block
+        // Teleport Portal (Purple Dot)
         const teleX = CEILING_GAP_X - 60;
         const teleY = roomCeil + 60;
         const pS = camera.toScreen(teleX, teleY);
         
-        ctx.fillStyle = '#ff22ee';
-        ctx.shadowColor = '#ff22ee'; ctx.shadowBlur = 10;
-        ctx.fillRect(pS.x, pS.y, 80, 16);
+        ctx.fillStyle = '#9933ff';
+        ctx.shadowColor = '#9933ff'; ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(pS.x + 40, pS.y + 8, 25, 0, Math.PI * 2);
+        ctx.fill();
         ctx.shadowBlur = 0;
         
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 12px sans-serif';
-        ctx.fillText("ENTER", pS.x + 20, pS.y + 12);
-        
-        // Trigger teleport if player stands near/on it
-        if (Math.abs(player.x - (teleX + 40)) < 40 && Math.abs(player.y - teleY) < 30) {
-            teleportToRoom(2);
-        }
+        ctx.font = 'bold 13px Outfit, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText("CLICK 2", pS.x + 40, pS.y - 25);
+        ctx.font = '10px Outfit, sans-serif';
+        ctx.fillText("STAGE 2", pS.x + 40, pS.y + 11);
+        ctx.textAlign = 'left';
     }
 }
 
