@@ -923,7 +923,7 @@ function checkLaserHits() {
 
 // =========================
 const player = {
-    x: 200, y: FLOOR_Y - 60,
+    x: 200, y: roomFloor - 60,
     radius: 16, dx: 0, dy: 0,
     gravity: 0.15, friction: 0.92, speed: 0.65,
     isDashing: false, canDash: true, dashTimer: 0,
