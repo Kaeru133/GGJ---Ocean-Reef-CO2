@@ -110,15 +110,6 @@ window.addEventListener("keydown", (e) => {
     if (e.code === "Escape") { isPaused = !isPaused; return; }
     if (isPaused || isAbilityModal) return;
 
-    // Head to Stage 2 manual trigger
-    if (activeRoom === 1 && e.code === "Digit2") {
-        const teleX = CEILING_GAP_X - 60, teleY = roomCeil + 60;
-        if (Math.abs(player.x - (teleX + 40)) < 60 && Math.abs(player.y - teleY) < 80) {
-            teleportToRoom(2);
-            return;
-        }
-    }
-
     keysDown.add(e.code);
     if (e.code === controls.dash)     player.tryDash();
     if (e.code === controls.tentacle) fireTentacle();
@@ -145,7 +136,7 @@ const camera = {
         this.x = target.x - canvas.width / 2;
         this.y = target.y - canvas.height / 2;
         if (this.x < 0) this.x = 0;
-        // Vertically unbounded camera for upper stage
+        if (this.y < 0) this.y = 0;
     },
     toScreen(wx, wy) { return { x: wx - this.x, y: wy - this.y }; }
 };
@@ -470,77 +461,48 @@ let worldPlatforms = [];
 function getChunkIndex(worldX) { return Math.floor(worldX / CHUNK_WIDTH); }
 
 function generateChunk(chunkIndex) {
-    const chunkKey = `${chunkIndex}_${activeRoom}`;
-    if (generatedChunks.has(chunkKey)) return;
-    generatedChunks.add(chunkKey);
+    if (generatedChunks.has(chunkIndex)) return;
+    generatedChunks.add(chunkIndex);
     const cx = chunkIndex * CHUNK_WIDTH;
 
     if (activeRoom === 2) {
         // ==========================================
-        // 🏰 ROOM 2 (INTENSE PROCEDURAL - REVERTED)
+        // 🏰 ROOM 2 (ORIGINAL INTENSE VERTICAL)
+        // ==========================================
+        const platCount = 20 + Math.floor(chunkIndex / 2);
+        for (let i = 0; i < platCount; i++) {
+            const pw = 100 + Math.random() * 150;
+            const py = (roomFloor - 1100) + Math.random() * 950;
+            const px = cx + Math.random() * (CHUNK_WIDTH - pw);
+            worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT, type: Math.random() < 0.6 ? 'solidBlock' : 'oneway', chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random()*5 });
+        }
+        // Enemies (Shooters + Bouncers galore)
+        for(let i=0; i<6; i++) {
+            const ex = cx + Math.random()*CHUNK_WIDTH, ey = roomFloor - 1000 + Math.random()*900;
+            if (Math.random() > 0.4) worldEnemies.push(new FlyingShooter(ex, ey, chunkIndex, activeRoom));
+            else worldEnemies.push(new PassiveBouncer(ex, ey, chunkIndex, activeRoom));
+        }
+        // The Start Hole in Room 2 (Walls)
+        if (chunkIndex === 1) {
+             worldPlatforms.push({ x: CEILING_GAP_X - 100, y: roomFloor - 600, width: 40, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid' });
+             worldPlatforms.push({ x: CEILING_GAP_X + CEILING_GAP_W + 60, y: roomFloor - 600, width: 40, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid' });
+        }
+    } else {
+        // ==========================================
+        // 🌊 ROOM 1 (ORIGINAL CLASSIC OCEAN)
         // ==========================================
         const baseCount = 18 + Math.floor(chunkIndex / 2);
         for (let i = 0; i < baseCount; i++) {
-            const pw = 80 + Math.random() * 120;
-            const minY = roomCeil + 300;
-            const maxY = roomFloor - 150;
-            const py = minY + Math.random() * (maxY - minY);
-            const px = cx + Math.random() * (CHUNK_WIDTH - pw);
-            const type = Math.random() < 0.5 ? 'solidBlock' : 'oneway';
-            worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT, type, chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 5 });
+            const pw = 80 + Math.random()*150;
+            const py = (roomCeil + 100) + Math.random() * (roomFloor - roomCeil - 250);
+            worldPlatforms.push({ x: cx + Math.random()*(CHUNK_WIDTH-pw), y: py, width: pw, height: PLATFORM_HEIGHT, type: Math.random() < 0.4 ? 'solidBlock' : 'oneway', chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random()*3 });
         }
-
-        // ENTRY HOLE (PIT)
-        const sChunk = getChunkIndex(CEILING_GAP_X);
-        if (chunkIndex === sChunk) {
-            // No pillars - just a hole in the floor (handled in drawFloor)
-            worldVents.push({ x: CEILING_GAP_X + CEILING_GAP_W/2, y: roomFloor - 30, radius: 45, chunk: chunkIndex, room: activeRoom });
-        }
-
-        // High Intensity Enemies
-        const enemies = 5 + Math.floor(chunkIndex / 2);
-        for(let i=0; i<enemies; i++) {
-            const ex = cx + Math.random()*CHUNK_WIDTH, ey = roomCeil + 200 + Math.random()*1500;
-            if (chunkIndex % 2 === 0) worldEnemies.push(new FlyingShooter(ex, ey, chunkIndex, activeRoom));
-            else worldEnemies.push(new PassiveBouncer(ex, ey, chunkIndex, activeRoom));
-        }
-
-    } else {
-        // ==========================================
-        // 🌊 ROOM 1 (LOWER STAGE - RESTORED)
-        // ==========================================
-        const baseCount = Math.max(8, 20 - chunkIndex);
-        const platWidth = () => Math.max(70, 200 - chunkIndex * 10) + Math.random() * 30;
-        let px = cx + 50;
-        while (px < cx + CHUNK_WIDTH - 50) {
-            const pw = platWidth();
-            const py = (roomCeil + 150) + Math.random() * (roomFloor - roomCeil - 300);
-            const isSolid = Math.random() < 0.35;
-            worldPlatforms.push({ 
-                x: px, y: py, width: pw, height: PLATFORM_HEIGHT, 
-                type: isSolid ? 'solidBlock' : 'oneway', 
-                chunk: chunkIndex, room: activeRoom, state: 'solid', 
-                blinkTimer: 0, blinkOffset: Math.random()*3 
-            });
-            px += pw + 120 + Math.random()*120;
-        }
-
-        // --- ENEMIES (Original Diversity) ---
-        const randX = () => cx + 100 + Math.random() * (CHUNK_WIDTH - 200);
-        if (chunkIndex === 0) {
-            worldEnemies.push(new PassiveBouncer(cx + 320, 800, chunkIndex, activeRoom));
-            worldEnemies.push(new GroundFish(cx + 500, roomFloor, chunkIndex, activeRoom));
-        } else {
-            worldEnemies.push(new PassiveBouncer(randX(), 200 + Math.random()*600, chunkIndex, activeRoom));
-            worldEnemies.push(new GroundFish(randX(), roomFloor, chunkIndex, activeRoom));
-            
-            if (chunkIndex >= 2) worldEnemies.push(new Flyer(randX(), 150 + Math.random()*400, chunkIndex, activeRoom));
-            if (chunkIndex >= 4) worldEnemies.push(new FlyingShooter(randX(), 300 + Math.random()*400, chunkIndex, activeRoom));
-            
-            // Thermal Vents
-            if (chunkIndex % 3 === 0) 
-                worldVents.push({ x: cx + CHUNK_WIDTH/2, y: roomFloor - 30, radius: 34, chunk: chunkIndex, room: activeRoom });
-        }
+        // All enemy types in Room 1
+        worldEnemies.push(new PassiveBouncer(cx + Math.random()*CHUNK_WIDTH, 400, chunkIndex, activeRoom));
+        worldEnemies.push(new FlyingShooter(cx + Math.random()*CHUNK_WIDTH, 600, chunkIndex, activeRoom));
+        worldEnemies.push(new GroundFish(cx + Math.random()*CHUNK_WIDTH, roomFloor, chunkIndex, activeRoom));
+        worldEnemies.push(new Flyer(cx + Math.random()*CHUNK_WIDTH, 300, chunkIndex, activeRoom));
+        if (chunkIndex % 2 === 0) worldVents.push({ x: cx + 400, y: roomFloor - 30, radius: 40, chunk: chunkIndex, room: activeRoom });
     }
 }
 
@@ -1141,39 +1103,36 @@ function drawProjectiles() {
 // 🔄 TELEPORT / ROOM SYSTEM
 // =========================
 function teleportToRoom(roomNum) {
-    if (roomNum === 2) {
-        activeRoom = 2;
-        roomFloor = 0;        // Spiked Barrier at Y=0
-        roomCeil  = -3500;    // Goes high up
-        player.y = -120;      // Start above barrier
-        player.dy = -10;
+    activeRoom = roomNum;
+    roomFloor = 1200;
+    roomCeil  = 0;
+    if (activeRoom === 2) {
+        player.x = CEILING_GAP_X + 90;
+        player.y = roomFloor - 200;
+        player.dy = -15; // Vertical launch into Room 2
         if (!hasUnlockedTentacle) {
             hasUnlockedTentacle = true;
             isAbilityModal      = true;
         }
     } else {
-        activeRoom = 1;
-        roomFloor = 1200;
-        roomCeil  = 0;
-        player.x = CEILING_GAP_X + 90; // Pop back out of hole
-        player.y = 80;
+        player.x = 200;
+        player.y = roomFloor - 100;
         player.hp = player.maxHP;
     }
     
-    // Clear and build the new layer
+    // Reset World
     generatedChunks.clear();
     worldEnemies   = [];
     worldPlatforms = [];
     worldVents     = [];
     projectiles    = [];
     
-    // Reset hazard states
     airborneDuration = 0;
     nextLaserTime    = Infinity;
     nextDecayBurst   = Infinity;
     activeLasers     = [];
     decayBursts      = [];
-    nextShooterShot  = gameTime + 4;
+    nextShooterShot  = gameTime + 5;
 
     updateChunks();
     camera.follow(player);
@@ -1291,7 +1250,6 @@ function drawCeiling() {
     
     // Draw and handle the Teleport Platform bridging the gap in Room 1
     if (activeRoom === 1) {
-        // Platform block
         const teleX = CEILING_GAP_X - 60;
         const teleY = roomCeil + 60;
         const pS = camera.toScreen(teleX, teleY);
@@ -1304,10 +1262,13 @@ function drawCeiling() {
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 12px Outfit, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText("CLICK 2", pS.x + 40, pS.y - 12);
-        ctx.font = '10px Outfit, sans-serif';
-        ctx.fillText("STAGE 2", pS.x + 40, pS.y + 11);
+        ctx.fillText("ENTER", pS.x + 40, pS.y + 12);
         ctx.textAlign = 'left';
+
+        // Direct Trigger
+        if (dist(player.x, player.y, teleX + 40, teleY) < 60) {
+            teleportToRoom(2);
+        }
     }
 }
 
