@@ -1,0 +1,28 @@
+body {
+    background-color: #0d1117; /* Deep ocean dark background */
+    color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+#game-container {
+    text-align: center;
+}
+
+h1 {
+    color: #58a6ff; /* Neon blue from your design doc */
+    margin-bottom: 5px;
+}
+
+canvas {
+    border: 4px solid #30363d;
+    background-color: #161b22;
+    box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
+    border-radius: 8px;
+    display: block;
+    margin-top: 20px;
+}
