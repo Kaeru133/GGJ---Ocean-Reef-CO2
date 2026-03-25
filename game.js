@@ -1048,11 +1048,11 @@ const player = {
     },
 
     die() {
-        // Reset for now — full death screen can come later
+        // Reset full world state upon death
+        teleportToRoom(1);
         this.hp = this.maxHP;
-        this.x  = 200;
-        this.y  = FLOOR_Y - 60;
         this.dx = 0; this.dy = 0;
+        this.invincibilityFrames = 0;
     }
 };
 
@@ -1160,6 +1160,16 @@ function teleportToRoom(roomNum) {
     worldEnemies = [];
     worldPlatforms = [];
     worldVents   = [];
+    projectiles = []; // Clear current bullets
+    
+    // Reset hazard states
+    airborneDuration = 0;
+    nextLaserTime    = Infinity;
+    nextDecayBurst   = Infinity;
+    activeLasers     = [];
+    decayBursts      = [];
+    nextShooterShot  = gameTime + 5; // Give 5s grace on reset
+
     updateChunks(); // build the new room instantly
 }
 
