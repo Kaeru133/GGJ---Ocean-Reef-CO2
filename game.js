@@ -511,24 +511,39 @@ function generateChunk(chunkIndex) {
 
     } else {
         // ==========================================
-        // 🌊 ROOM 1 (LOWER STAGE)
+        // 🌊 ROOM 1 (LOWER STAGE - RESTORED)
         // ==========================================
         const baseCount = Math.max(8, 20 - chunkIndex);
-        let px = cx + 40;
-        while (px < cx + CHUNK_WIDTH - 40) {
-            const pw = 80 + Math.random()*100;
+        const platWidth = () => Math.max(70, 200 - chunkIndex * 10) + Math.random() * 30;
+        let px = cx + 50;
+        while (px < cx + CHUNK_WIDTH - 50) {
+            const pw = platWidth();
             const py = (roomCeil + 150) + Math.random() * (roomFloor - roomCeil - 300);
-            worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT, type: Math.random() < 0.3 ? 'solidBlock' : 'oneway', chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random()*3 });
-            px += pw + 100 + Math.random()*100;
+            const isSolid = Math.random() < 0.35;
+            worldPlatforms.push({ 
+                x: px, y: py, width: pw, height: PLATFORM_HEIGHT, 
+                type: isSolid ? 'solidBlock' : 'oneway', 
+                chunk: chunkIndex, room: activeRoom, state: 'solid', 
+                blinkTimer: 0, blinkOffset: Math.random()*3 
+            });
+            px += pw + 120 + Math.random()*120;
         }
-        // Enemies in Room 1
+
+        // --- ENEMIES (Original Diversity) ---
+        const randX = () => cx + 100 + Math.random() * (CHUNK_WIDTH - 200);
         if (chunkIndex === 0) {
             worldEnemies.push(new PassiveBouncer(cx + 320, 800, chunkIndex, activeRoom));
             worldEnemies.push(new GroundFish(cx + 500, roomFloor, chunkIndex, activeRoom));
         } else {
-            worldEnemies.push(new Flyer(cx + Math.random()*CHUNK_WIDTH, 400, chunkIndex, activeRoom));
-            worldEnemies.push(new GroundFish(cx + Math.random()*CHUNK_WIDTH, roomFloor, chunkIndex, activeRoom));
-            if (chunkIndex % 3 === 0) worldVents.push({ x: cx + 400, y: roomFloor - 30, radius: 34, chunk: chunkIndex, room: activeRoom });
+            worldEnemies.push(new PassiveBouncer(randX(), 200 + Math.random()*600, chunkIndex, activeRoom));
+            worldEnemies.push(new GroundFish(randX(), roomFloor, chunkIndex, activeRoom));
+            
+            if (chunkIndex >= 2) worldEnemies.push(new Flyer(randX(), 150 + Math.random()*400, chunkIndex, activeRoom));
+            if (chunkIndex >= 4) worldEnemies.push(new FlyingShooter(randX(), 300 + Math.random()*400, chunkIndex, activeRoom));
+            
+            // Thermal Vents
+            if (chunkIndex % 3 === 0) 
+                worldVents.push({ x: cx + CHUNK_WIDTH/2, y: roomFloor - 30, radius: 34, chunk: chunkIndex, room: activeRoom });
         }
     }
 }
@@ -660,21 +675,30 @@ function drawPlatforms() {
 
         let fillColor, glowColor, topShine, botShine;
 
-        if (!isSolid) {
-            fillColor = 'rgba(255, 140, 40, 0.9)'; // Warning blink
-            glowColor = '#ff9900';
-            topShine  = 'rgba(255,220,120,0.4)';
-            botShine  = 'rgba(0,0,0,0)';
-        } else if (isHardBlock) {
-            fillColor = 'rgba(20, 100, 70, 0.9)';  // Dark, dense green
-            glowColor = '#105030';
-            topShine  = 'rgba(100,200,150,0.2)';
-            botShine  = 'rgba(100,200,150,0.2)';   // Has a bottom rim as well to show it has physical depth from beneath
+        if (activeRoom === 2) {
+            // Stage 2: Neon Green (from drawing)
+            fillColor = isHardBlock ? 'rgba(50, 200, 10, 0.95)' : 'rgba(100, 255, 40, 0.85)';
+            glowColor = '#44ff11';
+            topShine  = 'rgba(200,255,180,0.4)';
+            botShine  = isHardBlock ? 'rgba(50,150,0,0.3)' : 'rgba(0,0,0,0)';
         } else {
-            fillColor = 'rgba(64, 210, 160, 0.88)'; // Bright neon teal (one-way)
-            glowColor = '#28c898';
-            topShine  = 'rgba(180,255,230,0.35)';   // Highlight on top indicates you can land here
-            botShine  = 'rgba(0,0,0,0)';
+            // Stage 1: Classic Teal/Ocean colors
+            if (!isSolid) {
+                fillColor = 'rgba(255, 140, 40, 0.9)'; 
+                glowColor = '#ff9900';
+                topShine  = 'rgba(255,220,120,0.4)';
+                botShine  = 'rgba(0,0,0,0)';
+            } else if (isHardBlock) {
+                fillColor = 'rgba(20, 100, 70, 0.9)';  
+                glowColor = '#105030';
+                topShine  = 'rgba(100,200,150,0.2)';
+                botShine  = 'rgba(100,200,150,0.2)';
+            } else {
+                fillColor = 'rgba(64, 210, 160, 0.88)'; 
+                glowColor = '#28c898';
+                topShine  = 'rgba(180,255,230,0.35)';   
+                botShine  = 'rgba(0,0,0,0)';
+            }
         }
 
         // Platform body
