@@ -1189,6 +1189,13 @@ function drawCeiling() {
         ctx.lineTo(Math.min(canvas.width, gR), cY);
         ctx.stroke();
         ctx.shadowBlur = 0;
+
+        // Draw a massive glowing beam downwards so they can see it from the floor
+        const beamGrad = ctx.createLinearGradient(0, cY, 0, cY + 1200);
+        beamGrad.addColorStop(0, 'rgba(0,255,190,0.25)');
+        beamGrad.addColorStop(1, 'rgba(0,255,190,0)');
+        ctx.fillStyle = beamGrad;
+        ctx.fillRect(Math.max(0, gL), cY, Math.min(canvas.width, gR) - Math.max(0, gL), 1200);
     }
     // Upper zone background tint when player is there
     if (inUpperZone) {
@@ -1345,6 +1352,13 @@ function drawHUD() {
         `[${keyCodeToLabel(controls.dash)}] Dash  ·  ⭕ Passive  🟢 Ground Fish  🟠 Flyer  🔴 Shooter`,
         16, canvas.height - 16
     );
+
+    // ---- DEBUG COORDINATES ----
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.font = "14px Outfit, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(`X: ${Math.floor(player.x)}   Y: ${Math.floor(player.y)}`, canvas.width - 20, 30);
+    ctx.textAlign = "left"; // Reset
 }
 
 function drawScene() {
