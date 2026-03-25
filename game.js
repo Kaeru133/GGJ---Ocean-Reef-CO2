@@ -90,6 +90,21 @@ let isPaused = false;
 
 window.addEventListener("keydown", (e) => {
     if (screenGame.classList.contains("hidden")) return;
+    
+    if (isTeleportWarning) {
+        if (e.code === "Digit0") {
+            isTeleportWarning = false;
+            teleportToRoom(1);
+        } else if (e.code === "Escape") {
+            isTeleportWarning = false;
+            // Pop the player back out of the hole safely
+            player.y -= 50;
+            player.dx = 15;
+            player.dy = -10;
+        }
+        return;
+    }
+
     if (e.code === "Escape") { isPaused = !isPaused; return; }
     if (isPaused) return;
     keysDown.add(e.code);
@@ -131,8 +146,11 @@ let windTimer  = 0;  // countdown to next wind direction change
 // =========================
 // 🌍 WORLD CONFIG
 // =========================
-const FLOOR_Y      = 1200;
 const CHUNK_WIDTH  = 800;
+let roomFloor      = 1200;
+let roomCeil       = 0;
+let activeRoom     = 1;
+let isTeleportWarning = false;
 
 // =========================
 // 🕐 GLOBAL GAME TIMER (seconds)
@@ -277,7 +295,7 @@ class PassiveBouncer {
  */
 class GroundFish {
     constructor(x, y, chunk) {
-        this.x = x; this.y = FLOOR_Y - 20; this.chunk = chunk;
+        this.x = x; this.y = roomFloor - 20; this.chunk = chunk;
         this.radius  = 18;
         this.isAlive = true;
         this.type    = "groundfish";
@@ -291,7 +309,7 @@ class GroundFish {
         this.x += this.speed * this.dir;
         // Reverse at patrol ends
         if (Math.abs(this.x - this.spawnX) > this.patrolRange) this.dir *= -1;
-        this.y = FLOOR_Y - this.radius; // Always on the floor
+        this.y = roomFloor - this.radius; // Always on the floor
     }
     draw() {
         if (!this.isAlive) return;
@@ -345,7 +363,7 @@ class Flyer {
         this.x += this.dx;
         this.y += this.dy;
         // Stay above floor
-        if (this.y + this.radius > FLOOR_Y) this.y = FLOOR_Y - this.radius;
+        if (this.y + this.radius > roomFloor) this.y = roomFloor - this.radius;
     }
     draw() {
         if (!this.isAlive) return;
@@ -390,7 +408,7 @@ class FlyingShooter {
         if (spd > this.speed) { this.dx = (this.dx/spd)*this.speed; this.dy = (this.dy/spd)*this.speed; }
         this.x += this.dx;
         this.y += this.dy;
-        if (this.y + this.radius > FLOOR_Y) this.y = FLOOR_Y - this.radius;
+        if (this.y + this.radius > roomFloor) this.y = roomFloor - this.radius;
     }
     shoot() {
         if (!this.isAlive) return;
@@ -453,8 +471,8 @@ function generateChunk(chunkIndex) {
     let placed = 0;
     while (placed < baseCount && px < cx + CHUNK_WIDTH - 40) {
         const pw = platWidth();
-        const minY = Math.max(120, 680 - chunkIndex * 70);
-        const maxY = FLOOR_Y - 60;
+        const minY = Math.max(roomCeil + 120, roomFloor - 520 - chunkIndex * 70);
+        const maxY = roomFloor - 60;
         const py   = minY + Math.random() * (maxY - minY);
         const isSolid = Math.random() < 0.4; // 40% chance to be a hard blocking platform
 
@@ -470,10 +488,9 @@ function generateChunk(chunkIndex) {
 
     // --- Pass 2: GATE PAIRS (reverse-dropper obstacles) ---
     // Two wide platforms side-by-side at the same height with a narrow gap.
-    // You must thread through the gap when shooting upward.
     const gateCount = Math.max(1, 4 - Math.floor(chunkIndex / 3));
     for (let g = 0; g < gateCount; g++) {
-        const gateY    = 150 + Math.random() * (FLOOR_Y - 400);
+        const gateY    = roomCeil + 150 + Math.random() * (roomFloor - roomCeil - 400);
         const gateCX   = cx + 120 + Math.random() * (CHUNK_WIDTH - 250);
         const gapW     = 110 + Math.random() * 60; // gap to thread through
         const armW     = Math.max(80, 160 - chunkIndex * 10);
@@ -492,11 +509,11 @@ function generateChunk(chunkIndex) {
     const stackCount = Math.max(1, 3 - Math.floor(chunkIndex / 4));
     for (let s = 0; s < stackCount; s++) {
         const stackX   = cx + 80 + Math.random() * (CHUNK_WIDTH - 180);
-        const stackBot = 600 + Math.random() * (FLOOR_Y - 700);
+        const stackBot = roomFloor - 600 + Math.random() * 500;
         const vGap     = 130 + Math.random() * 80;
         for (let v = 0; v < 3; v++) {
             const sy = stackBot - v * vGap;
-            if (sy > 100) {
+            if (sy > roomCeil + 100) {
                 const sw = Math.max(55, 140 - chunkIndex * 8);
                 const isSolid = Math.random() < 0.6; // 60% chance for stacks
                 worldPlatforms.push({ x: stackX, y: sy, width: sw,
@@ -510,16 +527,16 @@ function generateChunk(chunkIndex) {
     // ── ENEMY SPAWNS ────────────────────────────────────────────────
     // Chunk 0 = safe tutorial space
     if (chunkIndex === 0) {
-        worldEnemies.push(new PassiveBouncer(cx + 320, 950, chunkIndex));
-        worldEnemies.push(new PassiveBouncer(cx + 580, 150, chunkIndex));
-        worldEnemies.push(new GroundFish(cx + 500, FLOOR_Y, chunkIndex));
+        worldEnemies.push(new PassiveBouncer(cx + 320, roomCeil + 950, chunkIndex));
+        worldEnemies.push(new PassiveBouncer(cx + 580, roomCeil + 150, chunkIndex));
+        worldEnemies.push(new GroundFish(cx + 500, roomFloor, chunkIndex));
         return;
     }
 
     const rand = () => cx + 80 + Math.random() * (CHUNK_WIDTH - 160);
-    const topY = () => 80  + Math.random() * 200;
-    const midY = () => 380 + Math.random() * 370;
-    const lowY = () => 880 + Math.random() * 220;
+    const topY = () => roomCeil + 80  + Math.random() * 200;
+    const midY = () => roomCeil + 380 + Math.random() * 370;
+    const lowY = () => roomFloor - 320 + Math.random() * 220;
 
     worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
     worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
@@ -530,14 +547,14 @@ function generateChunk(chunkIndex) {
     if (chunkIndex >= 4 && Math.random() > 0.5)
         worldEnemies.push(new FlyingShooter(rand(), midY(), chunkIndex));
 
-    worldEnemies.push(new GroundFish(rand(), FLOOR_Y, chunkIndex));
-    worldEnemies.push(new GroundFish(rand(), FLOOR_Y, chunkIndex));
+    worldEnemies.push(new GroundFish(rand(), roomFloor, chunkIndex));
+    worldEnemies.push(new GroundFish(rand(), roomFloor, chunkIndex));
     if (chunkIndex >= 2) worldEnemies.push(new PassiveBouncer(rand(), lowY(), chunkIndex));
     if (chunkIndex >= 3 && Math.random() > 0.4)
         worldEnemies.push(new Flyer(rand(), lowY(), chunkIndex));
 
     if (chunkIndex % 3 === 0)
-        worldVents.push({ x: cx + CHUNK_WIDTH / 2, y: FLOOR_Y - 30, radius: 34, chunk: chunkIndex });
+        worldVents.push({ x: cx + CHUNK_WIDTH / 2, y: roomFloor - 30, radius: 34, chunk: chunkIndex });
 }
 
 function cullOldChunks(currentChunk) {
@@ -974,38 +991,35 @@ const player = {
         // ---- Floor (the actual ocean floor — resets platform timers) ----
         this.onFloor = false;
         if (this.x - this.radius < 0) { this.x = this.radius; this.dx = 0; }
-        if (this.y + this.radius > FLOOR_Y) {
+        if (this.y + this.radius > roomFloor) {
+            // Did they drop into the hole in Room 2?
+            if (activeRoom === 2 && this.x > CEILING_GAP_X && this.x < CEILING_GAP_X + CEILING_GAP_W) {
+                isTeleportWarning = true;
+                this.y = roomFloor - this.radius - 10; // Suspend them
+                this.dy = 0;
+                return;
+            }
+
             // Landing slide: transfer downward momentum into horizontal skid
             if (!this.onFloor && this.dy > 3) {
                 this.dx += (this.dx >= 0 ? 1 : -1) * this.dy * 0.35;
             }
-            this.y       = FLOOR_Y - this.radius;
+            this.y       = roomFloor - this.radius;
             this.dy      = 0;
             this.canDash = true;
             this.onFloor = true;
         }
-        if (this.y - this.radius < 0) {
+        if (this.y - this.radius < roomCeil) {
             // Allow passage through the ceiling gap
             const inGap = this.x > CEILING_GAP_X && this.x < CEILING_GAP_X + CEILING_GAP_W;
             if (!inGap) {
-                this.y  = this.radius;
+                this.y  = roomCeil + this.radius;
                 this.dy = 0;
             } else {
-                // ✨ Entering the upper zone!
-                inUpperZone = true;
-                if (!hasUnlockedTentacle) {
-                    hasUnlockedTentacle = true;
-                    abilityAlertTimer   = 4.5;
-                }
-            }
-            // Hard ceiling of upper zone
-            if (this.y - this.radius < UPPER_CEILING_Y) {
-                this.y  = UPPER_CEILING_Y + this.radius;
-                this.dy = 0;
+                // Ignore it if going up through the gap, we teleport them via the platform instead
             }
         }
-        // Track leaving upper zone
-        if (this.y > 60) inUpperZone = false;
+        
     },
 
     tryDash() {
@@ -1116,8 +1130,41 @@ function drawProjectiles() {
     });
 }
 
+// =========================
+// 🔄 TELEPORT / ROOM SYSTEM
+// =========================
+function teleportToRoom(roomNum) {
+    if (roomNum === 2) {
+        activeRoom = 2;
+        roomFloor = -2000;
+        roomCeil  = -3000;
+        player.x = CEILING_GAP_X + 90;
+        player.y = roomFloor - 100; // Launch out of hole
+        player.dy = -15; // Shoot up out of the hole!
+        if (!hasUnlockedTentacle) {
+            hasUnlockedTentacle = true;
+            abilityAlertTimer   = 4.5;
+        }
+    } else {
+        activeRoom = 1;
+        roomFloor = 1200;
+        roomCeil  = 0;
+        player.x = CEILING_GAP_X - 100; // Reset back near the portal
+        player.y = 80;
+    }
+    
+    // Snap camera
+    camera.follow(player);
+    // Clear the world
+    generatedChunks.clear();
+    worldEnemies = [];
+    worldPlatforms = [];
+    worldVents   = [];
+    updateChunks(); // build the new room instantly
+}
+
 function drawFloor() {
-    const floorScreen = camera.toScreen(0, FLOOR_Y);
+    const floorScreen = camera.toScreen(0, roomFloor);
     const floorGrad = ctx.createLinearGradient(0, floorScreen.y, 0, canvas.height);
     floorGrad.addColorStop(0, "rgba(88, 166, 255, 0.15)");
     floorGrad.addColorStop(1, "rgba(10, 30, 60, 0.5)");
@@ -1129,6 +1176,14 @@ function drawFloor() {
     ctx.strokeStyle = "rgba(88,166,255,0.4)";
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // The Hole in the Floor for the upper room
+    if (activeRoom === 2) {
+        const hL = camera.toScreen(CEILING_GAP_X, 0).x;
+        const hR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W, 0).x;
+        ctx.fillStyle = "#071e37"; // Match bg
+        ctx.fillRect(hL, floorScreen.y - 2, CEILING_GAP_W, canvas.height);
+    }
 }
 
 function drawVents() {
@@ -1169,7 +1224,7 @@ function updateUpperZone(delta) {
 }
 
 function drawCeiling() {
-    const cY = camera.toScreen(0, 0).y;
+    const cY = camera.toScreen(0, roomCeil).y;
     const gL = camera.toScreen(CEILING_GAP_X, 0).x;
     const gR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W, 0).x;
     ctx.strokeStyle = 'rgba(88,166,255,0.35)';
@@ -1178,32 +1233,27 @@ function drawCeiling() {
     ctx.beginPath(); ctx.moveTo(0, cY); ctx.lineTo(Math.max(0, gL), cY); ctx.stroke();
     // Right side
     ctx.beginPath(); ctx.moveTo(Math.min(canvas.width, gR), cY); ctx.lineTo(canvas.width, cY); ctx.stroke();
-    // Gap pulsing highlight — calls the player to explore upward
-    if (gR > 0 && gL < canvas.width) {
-        ctx.strokeStyle = `rgba(0,255,190,${0.35 + Math.sin(gameTime * 3) * 0.25})`;
-        ctx.lineWidth   = 3;
-        ctx.shadowColor = '#00ffcc';
-        ctx.shadowBlur  = 12;
-        ctx.beginPath();
-        ctx.moveTo(Math.max(0, gL), cY);
-        ctx.lineTo(Math.min(canvas.width, gR), cY);
-        ctx.stroke();
+    
+    // Draw and handle the Teleport Platform bridging the gap in Room 1
+    if (activeRoom === 1) {
+        // Platform block
+        const teleX = CEILING_GAP_X - 60;
+        const teleY = roomCeil + 60;
+        const pS = camera.toScreen(teleX, teleY);
+        
+        ctx.fillStyle = '#ff22ee';
+        ctx.shadowColor = '#ff22ee'; ctx.shadowBlur = 10;
+        ctx.fillRect(pS.x, pS.y, 80, 16);
         ctx.shadowBlur = 0;
-
-        // Draw a massive glowing beam downwards so they can see it from the floor
-        const beamGrad = ctx.createLinearGradient(0, cY, 0, cY + 1200);
-        beamGrad.addColorStop(0, 'rgba(0,255,190,0.25)');
-        beamGrad.addColorStop(1, 'rgba(0,255,190,0)');
-        ctx.fillStyle = beamGrad;
-        ctx.fillRect(Math.max(0, gL), cY, Math.min(canvas.width, gR) - Math.max(0, gL), 1200);
-    }
-    // Upper zone background tint when player is there
-    if (inUpperZone) {
-        const tintGrad = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.4);
-        tintGrad.addColorStop(0, 'rgba(60,0,80,0.35)');
-        tintGrad.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = tintGrad;
-        ctx.fillRect(0, 0, canvas.width, canvas.height * 0.5);
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText("ENTER", pS.x + 20, pS.y + 12);
+        
+        // Trigger teleport if player stands near/on it
+        if (Math.abs(player.x - (teleX + 40)) < 40 && Math.abs(player.y - teleY) < 30) {
+            teleportToRoom(2);
+        }
     }
 }
 
@@ -1414,6 +1464,32 @@ function drawPauseOverlay() {
     ctx.textAlign = "left"; // Reset alignment
 }
 
+function drawTeleportWarning() {
+    ctx.fillStyle = "rgba(40, 0, 20, 0.8)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const pw = 440, ph = 210;
+    const px = (canvas.width  - pw) / 2;
+    const py = (canvas.height - ph) / 2;
+    ctx.fillStyle = "rgba(10, 5, 10, 0.95)";
+    ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 18); ctx.fill();
+    ctx.strokeStyle = "rgba(255, 50, 100, 0.4)";
+    ctx.lineWidth = 2; ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.font = "bold 26px Outfit, sans-serif";
+    ctx.fillStyle = "#ff4466";
+    ctx.fillText("WARNING", canvas.width / 2, py + 50);
+
+    ctx.font = "16px Outfit, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.fillText("Going down resets your stage to the one before.", canvas.width / 2, py + 100);
+    
+    ctx.font = "14px Outfit, sans-serif";
+    ctx.fillStyle = "#00ffcc";
+    ctx.fillText("Press 0 to Confirm  ·  Press ESC to Cancel", canvas.width / 2, py + 160);
+    ctx.textAlign = "left";
+}
+
 // =========================
 // 🎮 GAME LOOP
 // =========================
@@ -1422,7 +1498,7 @@ function gameLoop(timestamp) {
     const delta = (timestamp - lastFrameTime) / 1000;
     lastFrameTime = timestamp;
 
-    if (!isPaused) {
+    if (!isPaused && !isTeleportWarning) {
         gameTime += delta;
 
         // Wind: slowly drift toward a random target, change direction every ~3s
@@ -1455,9 +1531,10 @@ function gameLoop(timestamp) {
         handleGlobalShot();
     }
 
-    // Always draw (so pause overlay appears over frozen frame)
+    // Always draw
     drawScene();
     if (isPaused) drawPauseOverlay();
+    if (isTeleportWarning) drawTeleportWarning();
 
     requestAnimationFrame(gameLoop);
 }
