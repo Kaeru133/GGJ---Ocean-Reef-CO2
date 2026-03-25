@@ -456,9 +456,14 @@ function generateChunk(chunkIndex) {
         const minY = Math.max(120, 680 - chunkIndex * 70);
         const maxY = FLOOR_Y - 60;
         const py   = minY + Math.random() * (maxY - minY);
-        worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT,
+        const isSolid = Math.random() < 0.4; // 40% chance to be a hard blocking platform
+
+        worldPlatforms.push({
+            x: px, y: py, width: pw, height: PLATFORM_HEIGHT,
+            type: isSolid ? 'solidBlock' : 'oneway',
             chunk: chunkIndex, state: 'solid', blinkTimer: 0,
-            blinkOffset: Math.random() * 2.5 });
+            blinkOffset: Math.random() * 2.5
+        });
         px += pw + minSpacing + Math.random() * 60;
         placed++;
     }
@@ -472,13 +477,13 @@ function generateChunk(chunkIndex) {
         const gateCX   = cx + 120 + Math.random() * (CHUNK_WIDTH - 250);
         const gapW     = 110 + Math.random() * 60; // gap to thread through
         const armW     = Math.max(80, 160 - chunkIndex * 10);
-        // Left arm
+        // Left arm (gates are ALWAYS solid blockers)
         worldPlatforms.push({ x: gateCX - gapW / 2 - armW, y: gateY,
-            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex,
+            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex, type: 'solidBlock',
             state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
         // Right arm
         worldPlatforms.push({ x: gateCX + gapW / 2, y: gateY,
-            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex,
+            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex, type: 'solidBlock',
             state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
     }
 
@@ -493,8 +498,9 @@ function generateChunk(chunkIndex) {
             const sy = stackBot - v * vGap;
             if (sy > 100) {
                 const sw = Math.max(55, 140 - chunkIndex * 8);
+                const isSolid = Math.random() < 0.6; // 60% chance for stacks
                 worldPlatforms.push({ x: stackX, y: sy, width: sw,
-                    height: PLATFORM_HEIGHT, chunk: chunkIndex,
+                    height: PLATFORM_HEIGHT, chunk: chunkIndex, type: isSolid ? 'solidBlock' : 'oneway',
                     state: 'solid', blinkTimer: 0,
                     blinkOffset: Math.random() * 2.5 });
             }
@@ -596,24 +602,38 @@ function checkPlatformCollisions() {
         if (player.x + hitW < pLeft)  return;
         if (player.x - hitW > pRight) return;
 
-        // One-way landing: only snap player on top when falling
+        // One-way landing (standing on top)
         const playerBottom  = player.y + player.radius;
+        const playerTop     = player.y - player.radius;
         const prevBottom    = playerBottom - player.dy;
+        const prevTop       = playerTop - player.dy;
 
+        // Landing from above (works for both oneway and solidBlock)
         if (player.dy >= 0 && prevBottom <= pTop && playerBottom >= pTop) {
             player.y       = pTop - player.radius;
             player.dy      = 0;
             player.canDash = true;
-            // Note: does NOT reset timeSinceGrounded — only the floor does that
+            return; // handled
+        }
+
+        // Hitting head from below (ONLY for solidBlock platforms)
+        if (plat.type === 'solidBlock') {
+            if (player.dy < 0 && prevTop >= pBottom && playerTop <= pBottom) {
+                player.y  = pBottom + player.radius;
+                player.dy = 1; // Bonk downward
+                return;
+            }
         }
 
         // Push player out if somehow inside platform (safety)
-        if (playerBottom > pTop && playerBottom < pBottom &&
-            player.y - player.radius < pBottom) {
+        if (playerBottom > pTop && playerTop < pBottom) {
             if (player.dy > 0) {
                 player.y  = pTop - player.radius;
                 player.dy = 0;
                 player.canDash = true;
+            } else if (plat.type === 'solidBlock' && player.dy < 0) {
+                player.y = pBottom + player.radius;
+                player.dy = 1;
             }
         }
     });
@@ -633,25 +653,53 @@ function drawPlatforms() {
 
         const s = camera.toScreen(plat.x, plat.y);
 
-        // Color: solid = neon teal coral, blinking = warm orange warning
-        const isSolid   = plat.state === 'solid';
-        const fillColor = isSolid ? 'rgba(64, 210, 160, 0.88)' : 'rgba(255, 140, 40, 0.9)';
-        const glowColor = isSolid ? '#28c898' : '#ff9900';
+        // Visual styling depends on platform behavior
+        const isSolid     = plat.state === 'solid';
+        const isHardBlock = plat.type === 'solidBlock';
+
+        let fillColor, glowColor, topShine, botShine;
+
+        if (!isSolid) {
+            fillColor = 'rgba(255, 140, 40, 0.9)'; // Warning blink
+            glowColor = '#ff9900';
+            topShine  = 'rgba(255,220,120,0.4)';
+            botShine  = 'rgba(0,0,0,0)';
+        } else if (isHardBlock) {
+            fillColor = 'rgba(20, 100, 70, 0.9)';  // Dark, dense green
+            glowColor = '#105030';
+            topShine  = 'rgba(100,200,150,0.2)';
+            botShine  = 'rgba(100,200,150,0.2)';   // Has a bottom rim as well to show it has physical depth from beneath
+        } else {
+            fillColor = 'rgba(64, 210, 160, 0.88)'; // Bright neon teal (one-way)
+            glowColor = '#28c898';
+            topShine  = 'rgba(180,255,230,0.35)';   // Highlight on top indicates you can land here
+            botShine  = 'rgba(0,0,0,0)';
+        }
 
         // Platform body
         ctx.fillStyle   = fillColor;
         ctx.shadowColor = glowColor;
-        ctx.shadowBlur  = isSolid ? 10 : 20;
+        ctx.shadowBlur  = isSolid ? (isHardBlock ? 4 : 10) : 20; // Hard blocks don't glow much, they look dense
         ctx.beginPath();
         ctx.roundRect(s.x, s.y, plat.width, plat.height, 4);
         ctx.fill();
         ctx.shadowBlur  = 0;
 
-        // Top highlight strip
-        ctx.fillStyle = isSolid ? 'rgba(180,255,230,0.35)' : 'rgba(255,220,120,0.4)';
-        ctx.beginPath();
-        ctx.roundRect(s.x + 2, s.y + 1, plat.width - 4, 4, 2);
-        ctx.fill();
+        // Top highlight
+        if (topShine !== 'rgba(0,0,0,0)') {
+            ctx.fillStyle = topShine;
+            ctx.beginPath();
+            ctx.roundRect(s.x + 2, s.y + 1, plat.width - 4, 3, 2);
+            ctx.fill();
+        }
+
+        // Bottom highlight for hard blocks
+        if (botShine !== 'rgba(0,0,0,0)') {
+            ctx.fillStyle = botShine;
+            ctx.beginPath();
+            ctx.roundRect(s.x + 2, s.y + plat.height - 4, plat.width - 4, 3, 2);
+            ctx.fill();
+        }
     });
 }
 
@@ -1099,6 +1147,153 @@ function drawVents() {
         ctx.fill(); ctx.shadowBlur = 0;
         ctx.closePath();
     });
+}
+
+// =========================
+// 🌊 UPPER ZONE FUNCTIONS
+// =========================
+function updateUpperZone(delta) {
+    if (!inUpperZone) { upperWaveTimer = 3; return; }
+    upperWaveTimer -= delta;
+    if (upperWaveTimer > 0) return;
+    upperWaveTimer = 4.0; // Spawn wave every 4s
+    // Spawn 3-4 hard enemies spread around the player
+    const count = 3 + (Math.random() > 0.5 ? 1 : 0);
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+        const d = 380 + Math.random() * 200;
+        const ex = player.x + Math.cos(angle) * d;
+        const ey = Math.max(UPPER_CEILING_Y + 60, Math.min(-60, player.y + Math.sin(angle) * d));
+        worldEnemies.push(new FlyingShooter(ex, ey, -1));
+    }
+}
+
+function drawCeiling() {
+    const cY = camera.toScreen(0, 0).y;
+    const gL = camera.toScreen(CEILING_GAP_X, 0).x;
+    const gR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W, 0).x;
+    ctx.strokeStyle = 'rgba(88,166,255,0.35)';
+    ctx.lineWidth   = 2;
+    // Left side of ceiling line
+    ctx.beginPath(); ctx.moveTo(0, cY); ctx.lineTo(Math.max(0, gL), cY); ctx.stroke();
+    // Right side
+    ctx.beginPath(); ctx.moveTo(Math.min(canvas.width, gR), cY); ctx.lineTo(canvas.width, cY); ctx.stroke();
+    // Gap pulsing highlight — calls the player to explore upward
+    if (gR > 0 && gL < canvas.width) {
+        ctx.strokeStyle = `rgba(0,255,190,${0.35 + Math.sin(gameTime * 3) * 0.25})`;
+        ctx.lineWidth   = 3;
+        ctx.shadowColor = '#00ffcc';
+        ctx.shadowBlur  = 12;
+        ctx.beginPath();
+        ctx.moveTo(Math.max(0, gL), cY);
+        ctx.lineTo(Math.min(canvas.width, gR), cY);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    }
+    // Upper zone background tint when player is there
+    if (inUpperZone) {
+        const tintGrad = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.4);
+        tintGrad.addColorStop(0, 'rgba(60,0,80,0.35)');
+        tintGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = tintGrad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height * 0.5);
+    }
+}
+
+// =========================
+// 🐙 TENTACLE ABILITY
+// =========================
+function fireTentacle() {
+    if (!hasUnlockedTentacle)          return;
+    if (player.tentacleCooldown > 0)   return;
+    if (player.isTentacleActive)       return;
+    player.isTentacleActive  = true;
+    player.tentacleTimer     = player.TENTACLE_DURATION;
+    player.tentacleCooldown  = player.TENTACLE_CD;
+    // Instant hit: kill all enemies within radius
+    worldEnemies.forEach(enemy => {
+        if (!enemy.isAlive) return;
+        if (dist(player.x, player.y, enemy.x, enemy.y) < player.TENTACLE_RADIUS) {
+            enemy.onHit(player);
+        }
+    });
+}
+
+function updateTentacle(delta) {
+    if (player.tentacleCooldown > 0) player.tentacleCooldown = Math.max(0, player.tentacleCooldown - delta);
+    if (player.isTentacleActive) {
+        player.tentacleTimer -= delta;
+        if (player.tentacleTimer <= 0) player.isTentacleActive = false;
+    }
+    if (abilityAlertTimer > 0) abilityAlertTimer -= delta;
+}
+
+function drawTentacle() {
+    if (!player.isTentacleActive) return;
+    const s        = camera.toScreen(player.x, player.y);
+    const progress = 1 - (player.tentacleTimer / player.TENTACLE_DURATION); // 0→1
+    const extend   = Math.min(1, progress * 1.8);
+    const alpha    = progress > 0.7 ? (1 - progress) / 0.3 : 1;
+    for (let i = 0; i < 6; i++) {
+        const angle  = (i / 6) * Math.PI * 2;
+        const len    = player.TENTACLE_RADIUS * extend;
+        const wave   = Math.sin(progress * Math.PI * 5 + i * 1.2) * 22;
+        const midX   = s.x + Math.cos(angle + 0.5) * len * 0.55 + Math.cos(angle + Math.PI/2) * wave;
+        const midY   = s.y + Math.sin(angle + 0.5) * len * 0.55 + Math.sin(angle + Math.PI/2) * wave;
+        const endX   = s.x + Math.cos(angle) * len;
+        const endY   = s.y + Math.sin(angle) * len;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = '#00ffcc';
+        ctx.lineWidth   = Math.max(1, 5 - progress * 3);
+        ctx.shadowColor = '#00ffaa';
+        ctx.shadowBlur  = 20;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.quadraticCurveTo(midX, midY, endX, endY);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+    // Center burst
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, player.TENTACLE_RADIUS * extend, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,255,180,0.2)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawAbilityAlert() {
+    if (abilityAlertTimer <= 0) return;
+    const a = Math.min(1, abilityAlertTimer);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textAlign   = 'center';
+    const cw = canvas.width, ch = canvas.height;
+    // Panel
+    ctx.fillStyle = 'rgba(0,140,100,0.18)';
+    ctx.beginPath();
+    ctx.roundRect(cw/2 - 230, ch * 0.38, 460, 110, 18);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,255,180,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Icon + title
+    ctx.fillStyle   = '#00ffcc';
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur  = 18;
+    ctx.font = 'bold 24px Outfit, sans-serif';
+    ctx.fillText('✨ New Ability Unlocked!', cw/2, ch * 0.38 + 42);
+    ctx.shadowBlur = 0;
+    // Description
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = '15px Outfit, sans-serif';
+    ctx.fillText(`🐙 Tentacle Strike  [ ${keyCodeToLabel(controls.tentacle)} ]  ·  10s cooldown`, cw/2, ch * 0.38 + 76);
+    ctx.textAlign = 'left';
+    ctx.restore();
 }
 
 function drawHUD() {
