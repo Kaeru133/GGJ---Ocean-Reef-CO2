@@ -461,48 +461,54 @@ let worldPlatforms = [];
 function getChunkIndex(worldX) { return Math.floor(worldX / CHUNK_WIDTH); }
 
 function generateChunk(chunkIndex) {
-    if (generatedChunks.has(chunkIndex)) return;
-    generatedChunks.add(chunkIndex);
+    const chunkKey = `${chunkIndex}_${activeRoom}`;
+    if (generatedChunks.has(chunkKey)) return;
+    generatedChunks.add(chunkKey);
     const cx = chunkIndex * CHUNK_WIDTH;
 
     if (activeRoom === 2) {
         // ==========================================
-        // 🏰 ROOM 2 (ORIGINAL INTENSE VERTICAL)
+        // 🏰 ROOM 2 (ULTRA INTENSE - RESTORED)
         // ==========================================
-        const platCount = 20 + Math.floor(chunkIndex / 2);
+        const platCount = 24 + Math.floor(chunkIndex / 2);
         for (let i = 0; i < platCount; i++) {
-            const pw = 100 + Math.random() * 150;
-            const py = (roomFloor - 1100) + Math.random() * 950;
+            const pw = 100 + Math.random() * 160;
+            const py = (roomFloor - 1150) + Math.random() * 1050; // Platforms everywhere
             const px = cx + Math.random() * (CHUNK_WIDTH - pw);
             worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT, type: Math.random() < 0.6 ? 'solidBlock' : 'oneway', chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random()*5 });
         }
-        // Enemies (Shooters + Bouncers galore)
-        for(let i=0; i<6; i++) {
+        // ALL ENEMY TYPES IN ROOM 2 (Restored Count)
+        for(let i=0; i<8; i++) {
             const ex = cx + Math.random()*CHUNK_WIDTH, ey = roomFloor - 1000 + Math.random()*900;
-            if (Math.random() > 0.4) worldEnemies.push(new FlyingShooter(ex, ey, chunkIndex, activeRoom));
-            else worldEnemies.push(new PassiveBouncer(ex, ey, chunkIndex, activeRoom));
+            const type = Math.floor(Math.random() * 4);
+            if (type === 0) worldEnemies.push(new FlyingShooter(ex, ey, chunkIndex, activeRoom));
+            else if (type === 1) worldEnemies.push(new PassiveBouncer(ex, ey, chunkIndex, activeRoom));
+            else if (type === 2) worldEnemies.push(new Flyer(ex, ey, chunkIndex, activeRoom));
+            else worldEnemies.push(new GroundFish(ex, roomFloor, chunkIndex, activeRoom));
         }
-        // The Start Hole in Room 2 (Walls)
+        // Starting Pit Walls
         if (chunkIndex === 1) {
-             worldPlatforms.push({ x: CEILING_GAP_X - 100, y: roomFloor - 600, width: 40, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid' });
-             worldPlatforms.push({ x: CEILING_GAP_X + CEILING_GAP_W + 60, y: roomFloor - 600, width: 40, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid' });
+             worldPlatforms.push({ x: CEILING_GAP_X - 100, y: roomFloor - 600, width: 45, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid' });
+             worldPlatforms.push({ x: CEILING_GAP_X + CEILING_GAP_W + 60, y: roomFloor - 600, width: 45, height: 600, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid' });
         }
     } else {
         // ==========================================
-        // 🌊 ROOM 1 (ORIGINAL CLASSIC OCEAN)
+        // 🌊 ROOM 1 (CLASSIC HIGH DENSITY)
         // ==========================================
-        const baseCount = 18 + Math.floor(chunkIndex / 2);
+        const baseCount = 22 + Math.floor(chunkIndex / 2);
         for (let i = 0; i < baseCount; i++) {
-            const pw = 80 + Math.random()*150;
+            const pw = 80 + Math.random()*160;
             const py = (roomCeil + 100) + Math.random() * (roomFloor - roomCeil - 250);
             worldPlatforms.push({ x: cx + Math.random()*(CHUNK_WIDTH-pw), y: py, width: pw, height: PLATFORM_HEIGHT, type: Math.random() < 0.4 ? 'solidBlock' : 'oneway', chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random()*3 });
         }
-        // All enemy types in Room 1
-        worldEnemies.push(new PassiveBouncer(cx + Math.random()*CHUNK_WIDTH, 400, chunkIndex, activeRoom));
-        worldEnemies.push(new FlyingShooter(cx + Math.random()*CHUNK_WIDTH, 600, chunkIndex, activeRoom));
-        worldEnemies.push(new GroundFish(cx + Math.random()*CHUNK_WIDTH, roomFloor, chunkIndex, activeRoom));
-        worldEnemies.push(new Flyer(cx + Math.random()*CHUNK_WIDTH, 300, chunkIndex, activeRoom));
-        if (chunkIndex % 2 === 0) worldVents.push({ x: cx + 400, y: roomFloor - 30, radius: 40, chunk: chunkIndex, room: activeRoom });
+        // Spawning multiple of each per chunk
+        for(let i=0; i<2; i++) {
+            worldEnemies.push(new PassiveBouncer(cx + Math.random()*CHUNK_WIDTH, 400 + Math.random()*400, chunkIndex, activeRoom));
+            worldEnemies.push(new FlyingShooter(cx + Math.random()*CHUNK_WIDTH, 300 + Math.random()*300, chunkIndex, activeRoom));
+            worldEnemies.push(new GroundFish(cx + Math.random()*CHUNK_WIDTH, roomFloor, chunkIndex, activeRoom));
+            worldEnemies.push(new Flyer(cx + Math.random()*CHUNK_WIDTH, 200 + Math.random()*400, chunkIndex, activeRoom));
+        }
+        if (chunkIndex % 2 === 0) worldVents.push({ x: cx + 400, y: roomFloor - 30, radius: 42, chunk: chunkIndex, room: activeRoom });
     }
 }
 
@@ -1109,14 +1115,14 @@ function teleportToRoom(roomNum) {
     if (activeRoom === 2) {
         player.x = CEILING_GAP_X + 90;
         player.y = roomFloor - 200;
-        player.dy = -15; // Vertical launch into Room 2
+        player.dy = -15; 
         if (!hasUnlockedTentacle) {
             hasUnlockedTentacle = true;
             isAbilityModal      = true;
         }
     } else {
         player.x = 200;
-        player.y = roomFloor - 100;
+        player.y = roomFloor - 150; // Proper Room 1 spawn point
         player.hp = player.maxHP;
     }
     
