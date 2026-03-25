@@ -13,7 +13,7 @@ const startGameBtn   = document.getElementById("start-game-btn");
 // =========================
 // 🎬 INTRO
 // =========================
-const controls = { up:"KeyW", left:"KeyA", down:"KeyS", right:"KeyD", dash:"Space" };
+const controls = { up:"KeyW", left:"KeyA", down:"KeyS", right:"KeyD", dash:"Space", tentacle:"KeyE" };
 
 function goToSettings() {
     screenIntro.classList.add("hidden");
@@ -90,11 +90,11 @@ let isPaused = false;
 
 window.addEventListener("keydown", (e) => {
     if (screenGame.classList.contains("hidden")) return;
-    // ESC toggles pause
     if (e.code === "Escape") { isPaused = !isPaused; return; }
-    if (isPaused) return; // Block all input while paused
+    if (isPaused) return;
     keysDown.add(e.code);
-    if (e.code === controls.dash) player.tryDash();
+    if (e.code === controls.dash)     player.tryDash();
+    if (e.code === controls.tentacle) fireTentacle();
 });
 window.addEventListener("keyup", (e) => keysDown.delete(e.code));
 function isHeld(action) { return keysDown.has(controls[action]); }
@@ -167,9 +167,21 @@ let activeLasers     = [];       // { worldY, elapsed, maxDuration }
 let nextLaserTime    = Infinity; // armed after grace period, Infinity = disabled
 
 // 🔴 PLATFORM DECAY BURST LASERS (6-beam converging cage)
-const DECAY_BURST_INTERVAL = 3.5;  // seconds between burst spawns
+const DECAY_BURST_INTERVAL = 3.5;
 let decayBursts    = [];
-let nextDecayBurst = Infinity; // Arms when platforms start blinking
+let nextDecayBurst = Infinity;
+
+// =========================
+// 🌊 UPPER ZONE & CEILING GAP
+// =========================
+const CEILING_GAP_X   = 1450;  // World X where ceiling opens
+const CEILING_GAP_W   = 180;   // Width of the gap
+const UPPER_CEILING_Y = -900;  // Hard ceiling of the upper room
+
+let hasUnlockedTentacle = false;
+let abilityAlertTimer   = 0;    // shows ability banner for 3s
+let inUpperZone         = false;
+let upperWaveTimer      = 0;    // controls enemy waves in upper zone
 
 // =========================
 // 💥 PROJECTILES
@@ -524,7 +536,8 @@ function generateChunk(chunkIndex) {
 
 function cullOldChunks(currentChunk) {
     const cutoff = currentChunk - 5;
-    worldEnemies   = worldEnemies.filter(e => e.chunk >= cutoff);
+    // Preserve chunk = -1 (upper zone enemies)
+    worldEnemies   = worldEnemies.filter(e => e.chunk < 0 || e.chunk >= cutoff);
     worldVents     = worldVents.filter(v => v.chunk >= cutoff);
     worldPlatforms = worldPlatforms.filter(p => p.chunk >= cutoff);
     for (const c of generatedChunks) { if (c < cutoff) generatedChunks.delete(c); }
@@ -850,10 +863,13 @@ const player = {
     gravity: 0.15, friction: 0.92, speed: 0.65,
     isDashing: false, canDash: true, dashTimer: 0,
     dashSpeed: 14, dashDuration: 15,
-    // Health
     maxHP: 5, hp: 5,
     invincibilityFrames: 0,
-    onFloor: false, // true only when touching the actual floor (not platforms)
+    onFloor: false,
+    // 🐙 Tentacle Ability
+    tentacleCooldown: 0, TENTACLE_CD: 10,
+    isTentacleActive: false, tentacleTimer: 0,
+    TENTACLE_DURATION: 0.65, TENTACLE_RADIUS: 300,
 
     draw() {
         const s = camera.toScreen(this.x, this.y);
@@ -920,7 +936,28 @@ const player = {
             this.canDash = true;
             this.onFloor = true;
         }
-        if (this.y - this.radius < 0) { this.y = this.radius; this.dy = 0; }
+        if (this.y - this.radius < 0) {
+            // Allow passage through the ceiling gap
+            const inGap = this.x > CEILING_GAP_X && this.x < CEILING_GAP_X + CEILING_GAP_W;
+            if (!inGap) {
+                this.y  = this.radius;
+                this.dy = 0;
+            } else {
+                // ✨ Entering the upper zone!
+                inUpperZone = true;
+                if (!hasUnlockedTentacle) {
+                    hasUnlockedTentacle = true;
+                    abilityAlertTimer   = 4.5;
+                }
+            }
+            // Hard ceiling of upper zone
+            if (this.y - this.radius < UPPER_CEILING_Y) {
+                this.y  = UPPER_CEILING_Y + this.radius;
+                this.dy = 0;
+            }
+        }
+        // Track leaving upper zone
+        if (this.y > 60) inUpperZone = false;
     },
 
     tryDash() {
@@ -1086,6 +1123,26 @@ function drawHUD() {
     ctx.font = "11px Outfit, sans-serif";
     ctx.fillText("HP", barX + barW + 8, barY + 11);
 
+    // ---- TENTACLE COOLDOWN BAR ----
+    if (hasUnlockedTentacle) {
+        const tBarY  = barY + barH + 10;
+        const cdFrac = player.tentacleCooldown > 0
+            ? (1 - player.tentacleCooldown / player.TENTACLE_CD) * barW : barW;
+        const tColor = player.tentacleCooldown > 0 ? '#8855ff' : '#00ffcc';
+        const label  = player.tentacleCooldown > 0
+            ? `${keyCodeToLabel(controls.tentacle)} ${Math.ceil(player.tentacleCooldown)}s`
+            : `${keyCodeToLabel(controls.tentacle)} READY`;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath(); ctx.roundRect(barX - 2, tBarY - 2, barW + 4, barH + 4, 6); ctx.fill();
+        ctx.fillStyle   = tColor;
+        ctx.shadowColor = tColor; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.roundRect(barX, tBarY, cdFrac, barH, 4); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle  = 'rgba(255,255,255,0.5)';
+        ctx.font = '11px Outfit, sans-serif';
+        ctx.fillText(label, barX + barW + 8, tBarY + 11);
+    }
+
     // Enemy legend at bottom
     ctx.fillStyle = "rgba(255,255,255,0.25)";
     ctx.font = "13px Outfit, sans-serif";
@@ -1098,14 +1155,17 @@ function drawHUD() {
 function drawScene() {
     drawBackground();
     drawFloor();
+    drawCeiling();        // Ceiling line with glowing gap
     drawLasers();
-    drawDecayBursts();    // 6-beam convergence when platforms blink
+    drawDecayBursts();
     drawPlatforms();
     drawVents();
     worldEnemies.forEach(e => e.draw());
     drawProjectiles();
+    drawTentacle();       // Tentacle overlay above enemies
     player.draw();
     drawHUD();
+    drawAbilityAlert();   // Ability unlock banner (top layer)
 }
 
 // =========================
@@ -1171,17 +1231,18 @@ function gameLoop(timestamp) {
         recordAirTrail(delta);
         updatePlatforms(delta);
         updateLasers(delta);
-        updateDecayBursts(delta);     // 6-beam platform decay bursts
+        updateDecayBursts(delta);
+        updateTentacle(delta);        // Tentacle cooldown + animation
+        updateUpperZone(delta);       // Enemy waves in upper zone
         worldEnemies.forEach(e => e.update());
         updateProjectiles();
 
-        // Collisions
         checkPlatformCollisions();
         checkEnemyCollisions();
         checkVentCollisions();
         checkProjectileHits();
         checkLaserHits();
-        checkDecayBurstHits();        // Convergence laser damage
+        checkDecayBurstHits();
         handleGlobalShot();
     }
 
