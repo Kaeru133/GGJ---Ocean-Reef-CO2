@@ -463,102 +463,142 @@ function generateChunk(chunkIndex) {
     generatedChunks.add(chunkIndex);
     const cx = chunkIndex * CHUNK_WIDTH;
 
-    // ── PLATFORM DENSITY ───────────────────────────────────────────
-    // Chunk 0 = densely packed (20 platforms), reduces to 8 later.
-    // Extra gate-pairs + vertical stacks create a reverse-dropper feel.
-    const baseCount  = Math.max(8, 20 - chunkIndex);
-    const platWidth  = () => Math.max(50, 200 - chunkIndex * 12) + Math.random() * 40;
-    const minSpacing = Math.max(70, 40 + chunkIndex * 18); // Gaps grow with chunks
+    if (activeRoom === 2) {
+        // ==========================================
+        // 🏰 ROOM 2 (STAGE 2) GENERATION
+        // ==========================================
+        
+        // --- Pass 1: ELEVATED PLATFORMS ---
+        const baseCount = Math.max(10, 16 - Math.floor(chunkIndex / 2));
+        for (let i = 0; i < baseCount; i++) {
+            const pw = 80 + Math.random() * 120;
+            // More elevated: focus platforms higher up
+            const minY = roomCeil + 300;
+            const maxY = roomFloor - 300;
+            const py = minY + Math.random() * (maxY - minY);
+            const px = cx + Math.random() * (CHUNK_WIDTH - pw);
+            const isSolid = Math.random() < 0.5;
+            worldPlatforms.push({
+                x: px, y: py, width: pw, height: PLATFORM_HEIGHT,
+                type: isSolid ? 'solidBlock' : 'oneway',
+                chunk: chunkIndex, state: 'solid', blinkTimer: 0, 
+                blinkOffset: Math.random() * 5
+            });
+        }
 
-    // --- Pass 1: Regular scattered platforms ---
-    let px = cx + 40;
-    let placed = 0;
-    while (placed < baseCount && px < cx + CHUNK_WIDTH - 40) {
-        const pw = platWidth();
-        const minY = Math.max(roomCeil + 120, roomFloor - 520 - chunkIndex * 70);
-        const maxY = roomFloor - 60;
-        const py   = minY + Math.random() * (maxY - minY);
-        const isSolid = Math.random() < 0.4; // 40% chance to be a hard blocking platform
+        // --- Pass 2: THE PIT WALLS (around CEILING_GAP_X) ---
+        // Create high vertical blockage to make it a true pit
+        const startChunk = getChunkIndex(CEILING_GAP_X);
+        if (chunkIndex === startChunk) {
+            // Left Wall of Pit
+            worldPlatforms.push({
+                x: CEILING_GAP_X - 120, y: roomFloor - 600, width: 60, height: 600,
+                type: 'solidBlock', chunk: chunkIndex, state: 'solid', blinkTimer: 0,
+                blinkOffset: 0
+            });
+            // Right Wall of Pit
+            worldPlatforms.push({
+                x: CEILING_GAP_X + CEILING_GAP_W + 60, y: roomFloor - 600, width: 60, height: 600,
+                type: 'solidBlock', chunk: chunkIndex, state: 'solid', blinkTimer: 0,
+                blinkOffset: 0
+            });
+        }
 
-        worldPlatforms.push({
-            x: px, y: py, width: pw, height: PLATFORM_HEIGHT,
-            type: isSolid ? 'solidBlock' : 'oneway',
-            chunk: chunkIndex, state: 'solid', blinkTimer: 0,
-            blinkOffset: Math.random() * 2.5
-        });
-        px += pw + minSpacing + Math.random() * 60;
-        placed++;
-    }
-
-    // --- Pass 2: GATE PAIRS (reverse-dropper obstacles) ---
-    // Two wide platforms side-by-side at the same height with a narrow gap.
-    const gateCount = Math.max(1, 4 - Math.floor(chunkIndex / 3));
-    for (let g = 0; g < gateCount; g++) {
-        const gateY    = roomCeil + 150 + Math.random() * (roomFloor - roomCeil - 400);
-        const gateCX   = cx + 120 + Math.random() * (CHUNK_WIDTH - 250);
-        const gapW     = 110 + Math.random() * 60; // gap to thread through
-        const armW     = Math.max(80, 160 - chunkIndex * 10);
-        // Left arm (gates are ALWAYS solid blockers)
-        worldPlatforms.push({ x: gateCX - gapW / 2 - armW, y: gateY,
-            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex, type: 'solidBlock',
-            state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
-        // Right arm
-        worldPlatforms.push({ x: gateCX + gapW / 2, y: gateY,
-            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex, type: 'solidBlock',
-            state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
-    }
-
-    // --- Pass 3: VERTICAL STACKS (tight column clusters) ---
-    // 2-3 platforms stacked with a vertical gap, forcing upward navigation.
-    const stackCount = Math.max(1, 3 - Math.floor(chunkIndex / 4));
-    for (let s = 0; s < stackCount; s++) {
-        const stackX   = cx + 80 + Math.random() * (CHUNK_WIDTH - 180);
-        const stackBot = roomFloor - 600 + Math.random() * 500;
-        const vGap     = 130 + Math.random() * 80;
-        for (let v = 0; v < 3; v++) {
-            const sy = stackBot - v * vGap;
-            if (sy > roomCeil + 100) {
-                const sw = Math.max(55, 140 - chunkIndex * 8);
-                const isSolid = Math.random() < 0.6; // 60% chance for stacks
-                worldPlatforms.push({ x: stackX, y: sy, width: sw,
-                    height: PLATFORM_HEIGHT, chunk: chunkIndex, type: isSolid ? 'solidBlock' : 'oneway',
-                    state: 'solid', blinkTimer: 0,
-                    blinkOffset: Math.random() * 2.5 });
+        // --- Pass 3: ENEMY SPAWNS (Shooters + Bouncers only) ---
+        const enemyCount = 2 + Math.min(4, Math.floor(chunkIndex / 2));
+        for (let i = 0; i < enemyCount; i++) {
+            const ex = cx + Math.random() * CHUNK_WIDTH;
+            const ey = roomCeil + 200 + Math.random() * (roomFloor - roomCeil - 400);
+            if (Math.random() > 0.4) {
+                worldEnemies.push(new FlyingShooter(ex, ey, chunkIndex));
+            } else {
+                worldEnemies.push(new PassiveBouncer(ex, ey, chunkIndex));
             }
         }
+        
+        // Small vent at the bottom of the pit to help escape
+        if (chunkIndex === startChunk) {
+            worldVents.push({ x: CEILING_GAP_X + CEILING_GAP_W/2, y: roomFloor - 30, radius: 40, chunk: chunkIndex });
+        }
+
+    } else {
+        // ==========================================
+        // 🌊 ROOM 1 (STAGE 1) GENERATION
+        // ==========================================
+        const baseCount  = Math.max(8, 20 - chunkIndex);
+        const platWidth  = () => Math.max(50, 200 - chunkIndex * 12) + Math.random() * 40;
+        const minSpacing = Math.max(70, 40 + chunkIndex * 18);
+
+        // --- Pass 1: Regular scattered platforms ---
+        let px = cx + 40;
+        let placed = 0;
+        while (placed < baseCount && px < cx + CHUNK_WIDTH - 40) {
+            const pw = platWidth();
+            const minY = Math.max(roomCeil + 120, roomFloor - 520 - chunkIndex * 70);
+            const maxY = roomFloor - 60;
+            const py   = minY + Math.random() * (maxY - minY);
+            const isSolid = Math.random() < 0.4;
+            worldPlatforms.push({
+                x: px, y: py, width: pw, height: PLATFORM_HEIGHT,
+                type: isSolid ? 'solidBlock' : 'oneway',
+                chunk: chunkIndex, state: 'solid', blinkTimer: 0,
+                blinkOffset: Math.random() * 2.5
+            });
+            px += pw + minSpacing + Math.random() * 60;
+            placed++;
+        }
+
+        // --- Pass 2: GATE PAIRS ---
+        const gateCount = Math.max(1, 4 - Math.floor(chunkIndex / 3));
+        for (let g = 0; g < gateCount; g++) {
+            const gateY    = roomCeil + 150 + Math.random() * (roomFloor - roomCeil - 400);
+            const gateCX   = cx + 120 + Math.random() * (CHUNK_WIDTH - 250);
+            const gapW     = 110 + Math.random() * 60;
+            const armW     = Math.max(80, 160 - chunkIndex * 10);
+            worldPlatforms.push({ x: gateCX - gapW / 2 - armW, y: gateY,
+                width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex, type: 'solidBlock',
+                state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
+            worldPlatforms.push({ x: gateCX + gapW / 2, y: gateY,
+                width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex, type: 'solidBlock',
+                state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
+        }
+
+        // --- Pass 3: VERTICAL STACKS ---
+        const stackCount = Math.max(1, 3 - Math.floor(chunkIndex / 4));
+        for (let s = 0; s < stackCount; s++) {
+            const stackX   = cx + 80 + Math.random() * (CHUNK_WIDTH - 180);
+            const stackBot = roomFloor - 600 + Math.random() * 500;
+            const vGap     = 130 + Math.random() * 80;
+            for (let v = 0; v < 3; v++) {
+                const sy = stackBot - v * vGap;
+                if (sy > roomCeil + 100) {
+                    const sw = Math.max(55, 140 - chunkIndex * 8);
+                    const isSolid = Math.random() < 0.6;
+                    worldPlatforms.push({ x: stackX, y: sy, width: sw, height: PLATFORM_HEIGHT, 
+                        chunk: chunkIndex, type: isSolid ? 'solidBlock' : 'oneway',
+                        state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
+                }
+            }
+        }
+
+        // ENEMY SPAWNS
+        if (chunkIndex === 0) {
+            worldEnemies.push(new PassiveBouncer(cx + 320, roomCeil + 950, chunkIndex));
+            worldEnemies.push(new PassiveBouncer(cx + 580, roomCeil + 150, chunkIndex));
+            worldEnemies.push(new GroundFish(cx + 500, roomFloor, chunkIndex));
+        } else {
+            const rand = () => cx + 80 + Math.random() * (CHUNK_WIDTH - 160);
+            const topY = () => roomCeil + 80  + Math.random() * 200;
+            const midY = () => roomCeil + 380 + Math.random() * 370;
+            const lowY = () => roomFloor - 320 + Math.random() * 220;
+            worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
+            worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
+            if (chunkIndex >= 2) worldEnemies.push(new Flyer(rand(), midY(), chunkIndex));
+            if (chunkIndex >= 4 && Math.random() > 0.5) worldEnemies.push(new FlyingShooter(rand(), midY(), chunkIndex));
+            worldEnemies.push(new GroundFish(rand(), roomFloor, chunkIndex));
+            if (chunkIndex % 3 === 0) worldVents.push({ x: cx + CHUNK_WIDTH / 2, y: roomFloor - 30, radius: 34, chunk: chunkIndex });
+        }
     }
-
-    // ── ENEMY SPAWNS ────────────────────────────────────────────────
-    // Chunk 0 = safe tutorial space
-    if (chunkIndex === 0) {
-        worldEnemies.push(new PassiveBouncer(cx + 320, roomCeil + 950, chunkIndex));
-        worldEnemies.push(new PassiveBouncer(cx + 580, roomCeil + 150, chunkIndex));
-        worldEnemies.push(new GroundFish(cx + 500, roomFloor, chunkIndex));
-        return;
-    }
-
-    const rand = () => cx + 80 + Math.random() * (CHUNK_WIDTH - 160);
-    const topY = () => roomCeil + 80  + Math.random() * 200;
-    const midY = () => roomCeil + 380 + Math.random() * 370;
-    const lowY = () => roomFloor - 320 + Math.random() * 220;
-
-    worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
-    worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
-    if (Math.random() > 0.4)
-        worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
-
-    if (chunkIndex >= 2) worldEnemies.push(new Flyer(rand(), midY(), chunkIndex));
-    if (chunkIndex >= 4 && Math.random() > 0.5)
-        worldEnemies.push(new FlyingShooter(rand(), midY(), chunkIndex));
-
-    worldEnemies.push(new GroundFish(rand(), roomFloor, chunkIndex));
-    worldEnemies.push(new GroundFish(rand(), roomFloor, chunkIndex));
-    if (chunkIndex >= 2) worldEnemies.push(new PassiveBouncer(rand(), lowY(), chunkIndex));
-    if (chunkIndex >= 3 && Math.random() > 0.4)
-        worldEnemies.push(new Flyer(rand(), lowY(), chunkIndex));
-
-    if (chunkIndex % 3 === 0)
-        worldVents.push({ x: cx + CHUNK_WIDTH / 2, y: roomFloor - 30, radius: 34, chunk: chunkIndex });
 }
 
 function cullOldChunks(currentChunk) {
@@ -1199,7 +1239,45 @@ function drawFloor() {
         const hL = camera.toScreen(CEILING_GAP_X, 0).x;
         const hR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W, 0).x;
         ctx.fillStyle = "#071e37"; // Match bg
-        ctx.fillRect(hL, floorScreen.y - 2, CEILING_GAP_W, canvas.height);
+        ctx.fillRect(hL, floorScreen.y - 4, hR - hL, canvas.height);
+        
+        // Draw Spikes everywhere else on the floor in Room 2
+        drawSpikes();
+    }
+}
+
+function drawSpikes() {
+    const floorY = camera.toScreen(0, roomFloor).y;
+    ctx.fillStyle = "#ff2244";
+    ctx.shadowColor = "#ff0000"; ctx.shadowBlur = 15;
+    const spikeW = 20;
+    const spikeH = 24;
+    
+    // Simple spike pattern across the visible floor
+    for (let x = 0; x < canvas.width; x += spikeW) {
+        // Skip the pit hole area
+        const worldX = x + camera.x;
+        if (activeRoom === 2 && worldX > CEILING_GAP_X && worldX < CEILING_GAP_X + CEILING_GAP_W) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(x, floorY);
+        ctx.lineTo(x + spikeW / 2, floorY - spikeH);
+        ctx.lineTo(x + spikeW, floorY);
+        ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+}
+
+function checkSpikeHits() {
+    if (activeRoom !== 2) return;
+    // If touching floor and NOT in the pit
+    if (player.y + player.radius >= roomFloor - 2) {
+        const inPit = player.x > CEILING_GAP_X && player.x < CEILING_GAP_X + CEILING_GAP_W;
+        if (!inPit) {
+            player.takeDamage(1);
+            // Kick player up slightly so they don't instadie
+            player.dy = -6;
+        }
     }
 }
 
@@ -1558,6 +1636,7 @@ function gameLoop(timestamp) {
         checkProjectileHits();
         checkLaserHits();
         checkDecayBurstHits();
+        checkSpikeHits(); // Added spike damage
         handleGlobalShot();
     }
 
