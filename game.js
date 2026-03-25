@@ -161,10 +161,15 @@ const LASER_LAG      = 2;    // seconds behind player the laser targets
 const LASER_INTERVAL = 2.2;  // seconds between laser shots
 const LASER_VIS      = 0.8;  // seconds a laser beam stays visible
 
-let airPosHistory    = [];      // { t, y } sampled every frame while airborne
-let airborneDuration = 0;       // seconds since player last touched the floor
-let activeLasers     = [];      // { worldY, elapsed, maxDuration }
+let airPosHistory    = [];       // { t, y } sampled every frame while airborne
+let airborneDuration = 0;        // seconds since player last touched the floor
+let activeLasers     = [];       // { worldY, elapsed, maxDuration }
 let nextLaserTime    = Infinity; // armed after grace period, Infinity = disabled
+
+// 🔴 PLATFORM DECAY BURST LASERS (6-beam converging cage)
+const DECAY_BURST_INTERVAL = 3.5;  // seconds between burst spawns
+let decayBursts    = [];
+let nextDecayBurst = Infinity; // Arms when platforms start blinking
 
 // =========================
 // 💥 PROJECTILES
@@ -425,31 +430,63 @@ function generateChunk(chunkIndex) {
     const cx = chunkIndex * CHUNK_WIDTH;
 
     // ── PLATFORM DENSITY ───────────────────────────────────────────
-    // Chunk 0 = very cramped (13 platforms, tight),  chunk 10+ = sparse (4 platforms)
-    const baseCount  = Math.max(4, 13 - chunkIndex);
-    const platWidth  = () => Math.max(55, 210 - chunkIndex * 13) + Math.random() * 45;
-    // Gap between platforms grows by ~22px per chunk
-    const minSpacing = Math.max(90, 55 + chunkIndex * 22);
+    // Chunk 0 = densely packed (20 platforms), reduces to 8 later.
+    // Extra gate-pairs + vertical stacks create a reverse-dropper feel.
+    const baseCount  = Math.max(8, 20 - chunkIndex);
+    const platWidth  = () => Math.max(50, 200 - chunkIndex * 12) + Math.random() * 40;
+    const minSpacing = Math.max(70, 40 + chunkIndex * 18); // Gaps grow with chunks
 
-    let px = cx + 50;
+    // --- Pass 1: Regular scattered platforms ---
+    let px = cx + 40;
     let placed = 0;
-    while (placed < baseCount && px < cx + CHUNK_WIDTH - 50) {
+    while (placed < baseCount && px < cx + CHUNK_WIDTH - 40) {
         const pw = platWidth();
-        // Early: near the floor (easy to reach). Later: full vertical spread.
-        const minY = Math.max(150, 700 - chunkIndex * 75);
-        const maxY = FLOOR_Y - 80;
+        const minY = Math.max(120, 680 - chunkIndex * 70);
+        const maxY = FLOOR_Y - 60;
         const py   = minY + Math.random() * (maxY - minY);
-
-        worldPlatforms.push({
-            x: px, y: py,
-            width: pw, height: PLATFORM_HEIGHT,
-            chunk: chunkIndex,
-            state: 'solid', blinkTimer: 0,
-            blinkOffset: Math.random() * 2.5
-        });
-
-        px += pw + minSpacing + Math.random() * 70;
+        worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT,
+            chunk: chunkIndex, state: 'solid', blinkTimer: 0,
+            blinkOffset: Math.random() * 2.5 });
+        px += pw + minSpacing + Math.random() * 60;
         placed++;
+    }
+
+    // --- Pass 2: GATE PAIRS (reverse-dropper obstacles) ---
+    // Two wide platforms side-by-side at the same height with a narrow gap.
+    // You must thread through the gap when shooting upward.
+    const gateCount = Math.max(1, 4 - Math.floor(chunkIndex / 3));
+    for (let g = 0; g < gateCount; g++) {
+        const gateY    = 150 + Math.random() * (FLOOR_Y - 400);
+        const gateCX   = cx + 120 + Math.random() * (CHUNK_WIDTH - 250);
+        const gapW     = 110 + Math.random() * 60; // gap to thread through
+        const armW     = Math.max(80, 160 - chunkIndex * 10);
+        // Left arm
+        worldPlatforms.push({ x: gateCX - gapW / 2 - armW, y: gateY,
+            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex,
+            state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
+        // Right arm
+        worldPlatforms.push({ x: gateCX + gapW / 2, y: gateY,
+            width: armW, height: PLATFORM_HEIGHT, chunk: chunkIndex,
+            state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 2.5 });
+    }
+
+    // --- Pass 3: VERTICAL STACKS (tight column clusters) ---
+    // 2-3 platforms stacked with a vertical gap, forcing upward navigation.
+    const stackCount = Math.max(1, 3 - Math.floor(chunkIndex / 4));
+    for (let s = 0; s < stackCount; s++) {
+        const stackX   = cx + 80 + Math.random() * (CHUNK_WIDTH - 180);
+        const stackBot = 600 + Math.random() * (FLOOR_Y - 700);
+        const vGap     = 130 + Math.random() * 80;
+        for (let v = 0; v < 3; v++) {
+            const sy = stackBot - v * vGap;
+            if (sy > 100) {
+                const sw = Math.max(55, 140 - chunkIndex * 8);
+                worldPlatforms.push({ x: stackX, y: sy, width: sw,
+                    height: PLATFORM_HEIGHT, chunk: chunkIndex,
+                    state: 'solid', blinkTimer: 0,
+                    blinkOffset: Math.random() * 2.5 });
+            }
+        }
     }
 
     // ── ENEMY SPAWNS ────────────────────────────────────────────────
@@ -607,45 +644,34 @@ function drawPlatforms() {
 
 // =========================
 // 🔴 AIR-TRAIL LASER SYSTEM
-// When airborne: records Y trail every frame.
-// After 5s of air time, pairs of horizontal lasers fire from both screen
-// edges aimed at where you were exactly 2s ago, every 2.2s.
-// Touching the floor clears the trail + resets the laser timer.
 // =========================
 function recordAirTrail(delta) {
     if (player.onFloor) {
-        // Safely on solid ground — reset everything
         airPosHistory    = [];
         airborneDuration = 0;
         nextLaserTime    = Infinity;
+        // Disarm decay bursts on landing
+        nextDecayBurst   = Infinity;
+        decayBursts      = [];
         return;
     }
 
     airborneDuration += delta;
-    // Sample Y history
     airPosHistory.push({ t: airborneDuration, y: player.y });
-    // Trim old samples ( keep max ~12s @ 60fps = 720 entries)
     if (airPosHistory.length > 720) airPosHistory.shift();
 
-    // Arm laser after grace period
-    if (airborneDuration > LASER_GRACE && nextLaserTime === Infinity) {
+    if (airborneDuration > LASER_GRACE && nextLaserTime === Infinity)
         nextLaserTime = gameTime + LASER_INTERVAL;
-    }
-    if (gameTime < nextLaserTime) return;
-
-    // Fire! Find position from LASER_LAG seconds ago
-    nextLaserTime = gameTime + LASER_INTERVAL;
-    const targetT = airborneDuration - LASER_LAG;
-    if (targetT <= 0) return;
-
-    for (let i = 0; i < airPosHistory.length; i++) {
-        if (airPosHistory[i].t >= targetT) {
-            activeLasers.push({
-                worldY:      airPosHistory[i].y,
-                elapsed:     0,
-                maxDuration: LASER_VIS
-            });
-            break;
+    if (gameTime >= nextLaserTime) {
+        nextLaserTime = gameTime + LASER_INTERVAL;
+        const targetT = airborneDuration - LASER_LAG;
+        if (targetT > 0) {
+            for (let i = 0; i < airPosHistory.length; i++) {
+                if (airPosHistory[i].t >= targetT) {
+                    activeLasers.push({ worldY: airPosHistory[i].y, elapsed: 0, maxDuration: LASER_VIS });
+                    break;
+                }
+            }
         }
     }
 }
@@ -653,6 +679,114 @@ function recordAirTrail(delta) {
 function updateLasers(delta) {
     activeLasers.forEach(l => l.elapsed += delta);
     activeLasers = activeLasers.filter(l => l.elapsed < l.maxDuration);
+}
+
+// =========================
+// 🔴 PLATFORM DECAY BURST LASERS
+// 6 beams close in on the player's position each burst.
+// Arms when platforms start blinking; resets when player hits the floor.
+// =========================
+function spawnDecayBurst() {
+    const tx = player.x, ty = player.y;
+    const arms = [];
+    for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2;
+        const srcDist = 550;
+        arms.push({
+            fromX: tx + Math.cos(angle) * srcDist,
+            fromY: ty + Math.sin(angle) * srcDist,
+            toX: tx, toY: ty
+        });
+    }
+    decayBursts.push({
+        arms,
+        targetX: tx, targetY: ty,
+        elapsed: 0,
+        telegraphDur: 0.5,  // Yellow warning phase
+        fireDur:      0.75, // Red damage phase
+        hasDamaged: false
+    });
+}
+
+function updateDecayBursts(delta) {
+    // Handle decay burst arming / disarming
+    if (timeSinceGrounded >= BLINK_START_TIME && nextDecayBurst === Infinity && !player.onFloor) {
+        nextDecayBurst = gameTime + 1.0; // 1s after blinking starts, first burst
+    }
+    if (nextDecayBurst !== Infinity && gameTime >= nextDecayBurst && !player.onFloor) {
+        spawnDecayBurst();
+        nextDecayBurst = gameTime + DECAY_BURST_INTERVAL;
+    }
+
+    decayBursts.forEach(b => b.elapsed += delta);
+    decayBursts = decayBursts.filter(b => b.elapsed < b.telegraphDur + b.fireDur);
+}
+
+function checkDecayBurstHits() {
+    decayBursts.forEach(burst => {
+        if (burst.hasDamaged) return;
+        if (burst.elapsed < burst.telegraphDur) return; // No damage during telegraph
+        // Damage if player is still near the original target point
+        if (dist(player.x, player.y, burst.targetX, burst.targetY) < player.radius + 28) {
+            player.takeDamage(1);
+            burst.hasDamaged = true;
+        }
+    });
+}
+
+function drawDecayBursts() {
+    decayBursts.forEach(burst => {
+        const isTelegraph = burst.elapsed < burst.telegraphDur;
+        const phase = isTelegraph
+            ? burst.elapsed / burst.telegraphDur          // 0→1 during warning
+            : (burst.elapsed - burst.telegraphDur) / burst.fireDur; // 0→1 during fire
+
+        burst.arms.forEach(arm => {
+            const srcS = camera.toScreen(arm.fromX, arm.fromY);
+            const tgtS = camera.toScreen(arm.toX,   arm.toY);
+            // Tip moves from source toward target as phase progresses
+            const tipX = srcS.x + (tgtS.x - srcS.x) * phase;
+            const tipY = srcS.y + (tgtS.y - srcS.y) * phase;
+
+            ctx.save();
+            if (isTelegraph) {
+                ctx.strokeStyle = `rgba(255,220,50,${0.3 + phase * 0.6})`;
+                ctx.lineWidth   = 2;
+                ctx.shadowColor = '#ffdd33';
+                ctx.shadowBlur  = 10;
+            } else {
+                const a = phase > 0.8 ? (1 - phase) * 5 : 1;
+                ctx.globalAlpha = a;
+                ctx.strokeStyle = '#ff3355';
+                ctx.lineWidth   = 3.5;
+                ctx.shadowColor = '#ff2244';
+                ctx.shadowBlur  = 18;
+            }
+            ctx.beginPath();
+            ctx.moveTo(srcS.x, srcS.y);
+            ctx.lineTo(tipX, tipY);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        });
+
+        // Convergence point indicator
+        if (!isTelegraph) {
+            const tgt = camera.toScreen(burst.targetX, burst.targetY);
+            const a   = phase > 0.8 ? (1 - phase) * 5 : 1;
+            ctx.save();
+            ctx.globalAlpha = a * 0.5;
+            ctx.beginPath();
+            ctx.arc(tgt.x, tgt.y, 30 * (1 - phase), 0, Math.PI * 2);
+            ctx.strokeStyle = '#ff4466';
+            ctx.lineWidth   = 2;
+            ctx.shadowColor = '#ff3355';
+            ctx.shadowBlur  = 12;
+            ctx.stroke();
+            ctx.shadowBlur  = 0;
+            ctx.restore();
+        }
+    });
 }
 
 function drawLasers() {
@@ -756,18 +890,18 @@ const player = {
             this.dy += this.gravity;
 
             if (this.onFloor) {
-                // —— GROUND: full responsive control ——
-                if (isHeld("left"))  this.dx -= this.speed;
-                if (isHeld("right")) this.dx += this.speed;
-                this.dx *= this.friction;  // Quick stop on ground
+                // —— GROUND: slippery! High momentum, less precision control ——
+                if (isHeld("left"))  this.dx -= this.speed * 0.75;
+                if (isHeld("right")) this.dx += this.speed * 0.75;
+                this.dx *= 0.975; // Slippery ground — you slide a lot
             } else {
                 // —— AIR: reduced control + inertia + wind drift ——
-                const airMult = 0.32;  // Only 32% of ground speed usable in the air
+                const airMult = 0.32;
                 if (isHeld("left"))  this.dx -= this.speed * airMult;
                 if (isHeld("right")) this.dx += this.speed * airMult;
-                if (isHeld("up"))    this.dy -= 0.08; // Slight float assist
-                this.dx *= 0.988;          // Barely any air friction = floaty drift
-                this.dx += windDrift;      // Wind gently pushes you sideways
+                if (isHeld("up"))    this.dy -= 0.08;
+                this.dx *= 0.988;     // Floaty inertia in air
+                this.dx += windDrift; // Wind drift
             }
         }
 
@@ -775,14 +909,18 @@ const player = {
 
         // ---- Floor (the actual ocean floor — resets platform timers) ----
         this.onFloor = false;
-        if (this.x - this.radius < 0)       { this.x = this.radius; this.dx = 0; }
-        if (this.y + this.radius > FLOOR_Y)  {
+        if (this.x - this.radius < 0) { this.x = this.radius; this.dx = 0; }
+        if (this.y + this.radius > FLOOR_Y) {
+            // Landing slide: transfer downward momentum into horizontal skid
+            if (!this.onFloor && this.dy > 3) {
+                this.dx += (this.dx >= 0 ? 1 : -1) * this.dy * 0.35;
+            }
             this.y       = FLOOR_Y - this.radius;
             this.dy      = 0;
             this.canDash = true;
-            this.onFloor = true; // ← Only the real floor sets this!
+            this.onFloor = true;
         }
-        if (this.y - this.radius < 0)        { this.y = this.radius; this.dy = 0; }
+        if (this.y - this.radius < 0) { this.y = this.radius; this.dy = 0; }
     },
 
     tryDash() {
@@ -960,7 +1098,8 @@ function drawHUD() {
 function drawScene() {
     drawBackground();
     drawFloor();
-    drawLasers();           // Behind everything else
+    drawLasers();
+    drawDecayBursts();    // 6-beam convergence when platforms blink
     drawPlatforms();
     drawVents();
     worldEnemies.forEach(e => e.draw());
@@ -1029,9 +1168,10 @@ function gameLoop(timestamp) {
         player.update();
         camera.follow(player);
         updateChunks();
-        recordAirTrail(delta);          // Trail recording + laser arming
+        recordAirTrail(delta);
         updatePlatforms(delta);
         updateLasers(delta);
+        updateDecayBursts(delta);     // 6-beam platform decay bursts
         worldEnemies.forEach(e => e.update());
         updateProjectiles();
 
@@ -1040,7 +1180,8 @@ function gameLoop(timestamp) {
         checkEnemyCollisions();
         checkVentCollisions();
         checkProjectileHits();
-        checkLaserHits();               // After player has moved
+        checkLaserHits();
+        checkDecayBurstHits();        // Convergence laser damage
         handleGlobalShot();
     }
 
