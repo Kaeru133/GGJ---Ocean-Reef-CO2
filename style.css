@@ -216,7 +216,7 @@ body {
 }
 
 #gameCanvas {
-    border: 2px solid rgba(88, 166, 255, 0.15);
-    box-shadow: 0 0 40px rgba(0, 150, 255, 0.1);
-    border-radius: 4px;
+    /* Fullscreen — no box, no border. The JS resizes the canvas to fill the window. */
+    display: block;
 }
+
