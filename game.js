@@ -477,35 +477,31 @@ function generateChunk(chunkIndex) {
 
     if (activeRoom === 2) {
         // ==========================================
-        // 🏰 ROOM 2 (UPPER STAGE)
+        // 🏰 ROOM 2 (INTENSE PROCEDURAL - REVERTED)
         // ==========================================
-        const baseCount = 12;
+        const baseCount = 18 + Math.floor(chunkIndex / 2);
         for (let i = 0; i < baseCount; i++) {
-            const pw = 80 + Math.random() * 100;
+            const pw = 80 + Math.random() * 120;
             const minY = roomCeil + 300;
-            const maxY = roomFloor - 300; // RoomFloor is 0
+            const maxY = roomFloor - 150;
             const py = minY + Math.random() * (maxY - minY);
             const px = cx + Math.random() * (CHUNK_WIDTH - pw);
-            const type = Math.random() < 0.6 ? 'solidBlock' : 'oneway';
+            const type = Math.random() < 0.5 ? 'solidBlock' : 'oneway';
             worldPlatforms.push({ x: px, y: py, width: pw, height: PLATFORM_HEIGHT, type, chunk: chunkIndex, room: activeRoom, state: 'solid', blinkTimer: 0, blinkOffset: Math.random() * 5 });
         }
 
-        // STARTING PIT WALLS (The two Purple Towers from drawing)
+        // ENTRY HOLE (PIT)
         const sChunk = getChunkIndex(CEILING_GAP_X);
         if (chunkIndex === sChunk) {
-            // Pillar 1 (Purple)
-            worldPlatforms.push({ x: CEILING_GAP_X - 60, y: roomFloor - 500, width: 25, height: 500, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid', color: '#9933ff' });
-            // Pillar 2 (Purple)
-            worldPlatforms.push({ x: CEILING_GAP_X + CEILING_GAP_W + 15, y: roomFloor - 500, width: 25, height: 500, type: 'solidBlock', chunk: chunkIndex, room: activeRoom, state: 'solid', color: '#9933ff' });
-            // Exit point indicator
+            // No pillars - just a hole in the floor (handled in drawFloor)
             worldVents.push({ x: CEILING_GAP_X + CEILING_GAP_W/2, y: roomFloor - 30, radius: 45, chunk: chunkIndex, room: activeRoom });
         }
 
-        // Enemies in Room 2 (Shooters + Bouncers only)
-        const enemies = 3 + Math.floor(chunkIndex / 2);
+        // High Intensity Enemies
+        const enemies = 5 + Math.floor(chunkIndex / 2);
         for(let i=0; i<enemies; i++) {
-            const ex = cx + Math.random()*CHUNK_WIDTH, ey = roomCeil + 300 + Math.random()*1500;
-            if (Math.random() > 0.5) worldEnemies.push(new FlyingShooter(ex, ey, chunkIndex, activeRoom));
+            const ex = cx + Math.random()*CHUNK_WIDTH, ey = roomCeil + 200 + Math.random()*1500;
+            if (chunkIndex % 2 === 0) worldEnemies.push(new FlyingShooter(ex, ey, chunkIndex, activeRoom));
             else worldEnemies.push(new PassiveBouncer(ex, ey, chunkIndex, activeRoom));
         }
 
@@ -1116,8 +1112,8 @@ function drawBackground() {
     } else {
         const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
         if (activeRoom === 2) {
-            bg.addColorStop(0, "#08001a"); // Even darker for Room 2
-            bg.addColorStop(1, "#1a0533");
+            bg.addColorStop(0, "#220033"); // Restore original Stage 2 deep purple
+            bg.addColorStop(1, "#071e37");
         } else {
             bg.addColorStop(0, "#050b14");
             bg.addColorStop(1, "#071e37");
@@ -1185,56 +1181,44 @@ function teleportToRoom(roomNum) {
 
 function drawFloor() {
     const floorScreen = camera.toScreen(0, roomFloor);
-    const inUpper = (activeRoom === 2);
+    const inUpper     = (activeRoom === 2);
     
-    // Gradient floor
     const floorGrad = ctx.createLinearGradient(0, floorScreen.y, 0, canvas.height);
     if (!inUpper) {
         floorGrad.addColorStop(0, "rgba(88, 166, 255, 0.15)");
         floorGrad.addColorStop(1, "rgba(10, 30, 60, 0.5)");
     } else {
-        floorGrad.addColorStop(0, "rgba(255, 30, 80, 0.2)"); // Reddish tint in Room 2
-        floorGrad.addColorStop(1, "rgba(20, 10, 30, 0.6)");
+        floorGrad.addColorStop(0, "rgba(50, 0, 100, 0.2)"); // Purple tint
+        floorGrad.addColorStop(1, "rgba(10, 5, 20, 0.6)");
     }
     ctx.fillStyle = floorGrad;
     ctx.fillRect(0, floorScreen.y, canvas.width, canvas.height);
 
-    // Barrier / Spikes
     if (inUpper) {
-        // Continuous Spikes on the left and right of the pit
-        const holeL = camera.toScreen(CEILING_GAP_X - 40, 0).x;
-        const holeR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W + 40, 0).x;
-        
-        // Draw spiked floor segments
-        drawSpikedFloor(0, holeL);
-        drawSpikedFloor(holeR, canvas.width);
-        
-        // The Pit Hole itself (purple portal at the bottom center of drawing)
-        ctx.fillStyle   = '#9933ff';
-        ctx.shadowColor = '#9933ff'; ctx.shadowBlur = 25;
-        ctx.beginPath();
-        ctx.arc(camera.toScreen(CEILING_GAP_X + CEILING_GAP_W/2, 0).x, floorScreen.y, 40, 0, Math.PI, true);
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        // Draw the hole
+        const holeL = camera.toScreen(CEILING_GAP_X, 0).x;
+        const holeR = camera.toScreen(CEILING_GAP_X + CEILING_GAP_W, 0).x;
+        ctx.fillStyle = "#071e37";
+        ctx.fillRect(holeL, floorScreen.y - 12, holeR-holeL, 30);
+        drawSpikes();
     } else {
-        // Simple line for Room 1
         ctx.beginPath();
-        ctx.moveTo(0, floorScreen.y);
-        ctx.lineTo(canvas.width, floorScreen.y);
+        ctx.moveTo(0, floorScreen.y); ctx.lineTo(canvas.width, floorScreen.y);
         ctx.strokeStyle = "rgba(88,166,255,0.4)";
         ctx.lineWidth = 2;
         ctx.stroke();
     }
 }
 
-function drawSpikedFloor(startX, endX) {
-    if (startX >= endX) return;
+function drawSpikes() {
     const floorY = camera.toScreen(0, roomFloor).y;
     ctx.fillStyle = "#ff2244";
-    ctx.shadowColor = "#ff0000"; ctx.shadowBlur = 10;
-    const spikeW = 22;
-    const spikeH = 28;
-    for (let x = startX; x < endX; x += spikeW) {
+    ctx.shadowColor = "#ff0000"; ctx.shadowBlur = 15;
+    const spikeW = 20;
+    const spikeH = 24;
+    for (let x = 0; x < canvas.width; x += spikeW) {
+        const wX = x + camera.x;
+        if (activeRoom === 2 && wX > CEILING_GAP_X && wX < CEILING_GAP_X + CEILING_GAP_W) continue;
         ctx.beginPath();
         ctx.moveTo(x, floorY);
         ctx.lineTo(x + spikeW / 2, floorY - spikeH);
@@ -1242,10 +1226,6 @@ function drawSpikedFloor(startX, endX) {
         ctx.fill();
     }
     ctx.shadowBlur = 0;
-}
-
-function drawSpikes() {
-    // Legacy - replaced by drawSpikedFloor for segmented drawing
 }
 
 function checkSpikeHits() {
@@ -1311,22 +1291,20 @@ function drawCeiling() {
     
     // Draw and handle the Teleport Platform bridging the gap in Room 1
     if (activeRoom === 1) {
-        // Teleport Portal (Purple Dot)
+        // Platform block
         const teleX = CEILING_GAP_X - 60;
         const teleY = roomCeil + 60;
         const pS = camera.toScreen(teleX, teleY);
         
-        ctx.fillStyle = '#9933ff';
-        ctx.shadowColor = '#9933ff'; ctx.shadowBlur = 15;
-        ctx.beginPath();
-        ctx.arc(pS.x + 40, pS.y + 8, 25, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = '#ff22ee';
+        ctx.shadowColor = '#ff22ee'; ctx.shadowBlur = 10;
+        ctx.fillRect(pS.x, pS.y, 80, 16);
         ctx.shadowBlur = 0;
         
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 13px Outfit, sans-serif';
+        ctx.font = 'bold 12px Outfit, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText("CLICK 2", pS.x + 40, pS.y - 25);
+        ctx.fillText("CLICK 2", pS.x + 40, pS.y - 12);
         ctx.font = '10px Outfit, sans-serif';
         ctx.fillText("STAGE 2", pS.x + 40, pS.y + 11);
         ctx.textAlign = 'left';
