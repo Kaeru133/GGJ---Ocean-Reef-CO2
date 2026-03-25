@@ -123,6 +123,11 @@ const camera = {
     toScreen(wx, wy) { return { x: wx - this.x, y: wy - this.y }; }
 };
 
+// Slow, random horizontal air drift — changes every ~3s
+let windDrift  = 0;  // current push per frame
+let windTarget = 0;  // slowly moves toward this
+let windTimer  = 0;  // countdown to next wind direction change
+
 // =========================
 // 🌍 WORLD CONFIG
 // =========================
@@ -144,9 +149,22 @@ let nextShooterShot    = 10; // fire first shot after 10s
 // =========================
 // 🪸 PLATFORM CONFIG
 // =========================
-const PLATFORM_HEIGHT      = 16;
-const BLINK_START_TIME     = 6;  // seconds airborne before blinking begins
-const BLINK_DURATION       = 3;  // seconds of blinking before platform vanishes
+const PLATFORM_HEIGHT  = 16;
+const BLINK_START_TIME = 6;   // seconds airborne before blinking begins
+const BLINK_DURATION   = 3;   // seconds of blinking before platform vanishes
+
+// =========================
+// 🔴 LASER SYSTEM CONFIG
+// =========================
+const LASER_GRACE    = 5;    // seconds of airborne grace before lasers arm
+const LASER_LAG      = 2;    // seconds behind player the laser targets
+const LASER_INTERVAL = 2.2;  // seconds between laser shots
+const LASER_VIS      = 0.8;  // seconds a laser beam stays visible
+
+let airPosHistory    = [];      // { t, y } sampled every frame while airborne
+let airborneDuration = 0;       // seconds since player last touched the floor
+let activeLasers     = [];      // { worldY, elapsed, maxDuration }
+let nextLaserTime    = Infinity; // armed after grace period, Infinity = disabled
 
 // =========================
 // 💥 PROJECTILES
@@ -407,35 +425,30 @@ function generateChunk(chunkIndex) {
     const cx = chunkIndex * CHUNK_WIDTH;
 
     // ── PLATFORM DENSITY ───────────────────────────────────────────
-    // Early chunks: cramped and close (you MUST keep moving).
-    // Later chunks: larger gaps, narrower planks — more skill needed.
-    const baseCount   = Math.max(3, 8 - chunkIndex);   // 8 → 3 platforms
-    const platWidth   = () => Math.max(60, 180 - chunkIndex * 15) + Math.random() * 60;
-    const minSpacing  = Math.max(100, 80 + chunkIndex * 20);
+    // Chunk 0 = very cramped (13 platforms, tight),  chunk 10+ = sparse (4 platforms)
+    const baseCount  = Math.max(4, 13 - chunkIndex);
+    const platWidth  = () => Math.max(55, 210 - chunkIndex * 13) + Math.random() * 45;
+    // Gap between platforms grows by ~22px per chunk
+    const minSpacing = Math.max(90, 55 + chunkIndex * 22);
 
-    // Place platforms at random heights across the chunk
-    let px = cx + 60;
+    let px = cx + 50;
     let placed = 0;
-    while (placed < baseCount && px < cx + CHUNK_WIDTH - 60) {
+    while (placed < baseCount && px < cx + CHUNK_WIDTH - 50) {
         const pw = platWidth();
-        // Distribute heights: early chunks cluster near floor (easier to get to),
-        // later chunks spread higher
-        const minY = chunkIndex < 3 ? 600 : 200;
+        // Early: near the floor (easy to reach). Later: full vertical spread.
+        const minY = Math.max(150, 700 - chunkIndex * 75);
         const maxY = FLOOR_Y - 80;
         const py   = minY + Math.random() * (maxY - minY);
 
         worldPlatforms.push({
             x: px, y: py,
-            width: pw,
-            height: PLATFORM_HEIGHT,
+            width: pw, height: PLATFORM_HEIGHT,
             chunk: chunkIndex,
-            state: 'solid',  // 'solid' | 'blinking' | 'gone'
-            blinkTimer: 0,
-            // Random delay offset so platforms don't all vanish at the same second
+            state: 'solid', blinkTimer: 0,
             blinkOffset: Math.random() * 2.5
         });
 
-        px += pw + minSpacing + Math.random() * 80;
+        px += pw + minSpacing + Math.random() * 70;
         placed++;
     }
 
@@ -593,7 +606,109 @@ function drawPlatforms() {
 }
 
 // =========================
-// 🌊 PLAYER
+// 🔴 AIR-TRAIL LASER SYSTEM
+// When airborne: records Y trail every frame.
+// After 5s of air time, pairs of horizontal lasers fire from both screen
+// edges aimed at where you were exactly 2s ago, every 2.2s.
+// Touching the floor clears the trail + resets the laser timer.
+// =========================
+function recordAirTrail(delta) {
+    if (player.onFloor) {
+        // Safely on solid ground — reset everything
+        airPosHistory    = [];
+        airborneDuration = 0;
+        nextLaserTime    = Infinity;
+        return;
+    }
+
+    airborneDuration += delta;
+    // Sample Y history
+    airPosHistory.push({ t: airborneDuration, y: player.y });
+    // Trim old samples ( keep max ~12s @ 60fps = 720 entries)
+    if (airPosHistory.length > 720) airPosHistory.shift();
+
+    // Arm laser after grace period
+    if (airborneDuration > LASER_GRACE && nextLaserTime === Infinity) {
+        nextLaserTime = gameTime + LASER_INTERVAL;
+    }
+    if (gameTime < nextLaserTime) return;
+
+    // Fire! Find position from LASER_LAG seconds ago
+    nextLaserTime = gameTime + LASER_INTERVAL;
+    const targetT = airborneDuration - LASER_LAG;
+    if (targetT <= 0) return;
+
+    for (let i = 0; i < airPosHistory.length; i++) {
+        if (airPosHistory[i].t >= targetT) {
+            activeLasers.push({
+                worldY:      airPosHistory[i].y,
+                elapsed:     0,
+                maxDuration: LASER_VIS
+            });
+            break;
+        }
+    }
+}
+
+function updateLasers(delta) {
+    activeLasers.forEach(l => l.elapsed += delta);
+    activeLasers = activeLasers.filter(l => l.elapsed < l.maxDuration);
+}
+
+function drawLasers() {
+    activeLasers.forEach(laser => {
+        const s       = camera.toScreen(0, laser.worldY);
+        const progress = laser.elapsed / laser.maxDuration; // 0→1
+        // Fade out in last 20% of duration
+        const alpha   = progress > 0.8 ? (1 - progress) * 5 : 1;
+        if (alpha <= 0) return;
+
+        // Core beam
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Glow halo (wide, soft)
+        ctx.strokeStyle = 'rgba(255, 30, 80, 0.3)';
+        ctx.lineWidth   = 14;
+        ctx.shadowColor = '#ff2255';
+        ctx.shadowBlur  = 20;
+        ctx.beginPath();
+        ctx.moveTo(0, s.y);
+        ctx.lineTo(canvas.width, s.y);
+        ctx.stroke();
+
+        // Core line (thin, bright)
+        ctx.strokeStyle = '#ff5588';
+        ctx.lineWidth   = 2.5;
+        ctx.shadowBlur  = 10;
+        ctx.beginPath();
+        ctx.moveTo(0, s.y);
+        ctx.lineTo(canvas.width, s.y);
+        ctx.stroke();
+
+        // Emitter nodes on both edges
+        ctx.fillStyle   = '#ff2055';
+        ctx.shadowBlur  = 18;
+        [-6, canvas.width + 6].forEach(ex => {
+            ctx.beginPath();
+            ctx.arc(ex, s.y, 7, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.shadowBlur  = 0;
+        ctx.restore();
+    });
+}
+
+function checkLaserHits() {
+    activeLasers.forEach(laser => {
+        // Thin hitbox: 8px tolerance (not too punishing)
+        if (Math.abs(player.y - laser.worldY) < player.radius * 0.5 + 4) {
+            player.takeDamage(1);
+        }
+    });
+}
+
 // =========================
 const player = {
     x: 200, y: FLOOR_Y - 60,
@@ -639,10 +754,21 @@ const player = {
             }
         } else {
             this.dy += this.gravity;
-            if (isHeld("left"))  this.dx -= this.speed;
-            if (isHeld("right")) this.dx += this.speed;
-            if (isHeld("up"))    this.dy -= 0.12;
-            this.dx *= this.friction;
+
+            if (this.onFloor) {
+                // —— GROUND: full responsive control ——
+                if (isHeld("left"))  this.dx -= this.speed;
+                if (isHeld("right")) this.dx += this.speed;
+                this.dx *= this.friction;  // Quick stop on ground
+            } else {
+                // —— AIR: reduced control + inertia + wind drift ——
+                const airMult = 0.32;  // Only 32% of ground speed usable in the air
+                if (isHeld("left"))  this.dx -= this.speed * airMult;
+                if (isHeld("right")) this.dx += this.speed * airMult;
+                if (isHeld("up"))    this.dy -= 0.08; // Slight float assist
+                this.dx *= 0.988;          // Barely any air friction = floaty drift
+                this.dx += windDrift;      // Wind gently pushes you sideways
+            }
         }
 
         this.x += this.dx; this.y += this.dy;
@@ -834,7 +960,8 @@ function drawHUD() {
 function drawScene() {
     drawBackground();
     drawFloor();
-    drawPlatforms();        // Drawn below enemies so enemies appear on top
+    drawLasers();           // Behind everything else
+    drawPlatforms();
     drawVents();
     worldEnemies.forEach(e => e.draw());
     drawProjectiles();
@@ -890,19 +1017,30 @@ function gameLoop(timestamp) {
     if (!isPaused) {
         gameTime += delta;
 
+        // Wind: slowly drift toward a random target, change direction every ~3s
+        windTimer -= delta;
+        if (windTimer <= 0) {
+            windTarget = (Math.random() - 0.5) * 0.07;
+            windTimer  = 2.5 + Math.random() * 2;
+        }
+        windDrift += (windTarget - windDrift) * 0.01; // smooth interpolation
+
         // Update
         player.update();
         camera.follow(player);
         updateChunks();
-        updatePlatforms(delta);         // Decay blink timers
+        recordAirTrail(delta);          // Trail recording + laser arming
+        updatePlatforms(delta);
+        updateLasers(delta);
         worldEnemies.forEach(e => e.update());
         updateProjectiles();
 
         // Collisions
-        checkPlatformCollisions();      // Must run after player.update()
+        checkPlatformCollisions();
         checkEnemyCollisions();
         checkVentCollisions();
         checkProjectileHits();
+        checkLaserHits();               // After player has moved
         handleGlobalShot();
     }
 
