@@ -97,16 +97,18 @@ window.addEventListener("keydown", (e) => {
             teleportToRoom(1);
         } else if (e.code === "Escape") {
             isTeleportWarning = false;
-            // Pop the player back out of the hole safely
-            player.y -= 50;
-            player.dx = 15;
-            player.dy = -10;
+            player.y -= 50; player.dx = 15; player.dy = -10;
         }
         return;
     }
 
+    if (isAbilityModal && (e.code === "Enter" || e.code === "NumpadEnter")) {
+        isAbilityModal = false;
+        return;
+    }
+
     if (e.code === "Escape") { isPaused = !isPaused; return; }
-    if (isPaused) return;
+    if (isPaused || isAbilityModal) return;
     keysDown.add(e.code);
     if (e.code === controls.dash)     player.tryDash();
     if (e.code === controls.tentacle) fireTentacle();
@@ -151,6 +153,8 @@ let roomFloor      = 1200;
 let roomCeil       = 0;
 let activeRoom     = 1;
 let isTeleportWarning = false;
+let isAbilityModal    = false;
+let needsReset        = false; // Deferred death reset to avoid freezes
 
 // =========================
 // 🕐 GLOBAL GAME TIMER (seconds)
@@ -1048,11 +1052,8 @@ const player = {
     },
 
     die() {
-        // Reset full world state upon death
-        teleportToRoom(1);
-        this.hp = this.maxHP;
-        this.dx = 0; this.dy = 0;
-        this.invincibilityFrames = 0;
+        // Just flag a reset for the next frame start to avoid loop crashes
+        needsReset = true;
     }
 };
 
@@ -1096,7 +1097,7 @@ function handleGlobalShot() {
 // 🎨 DRAW
 // =========================
 function drawBackground() {
-    if (bgLoaded) {
+    if (bgLoaded && activeRoom === 1) {
         const bw = bgImage.naturalWidth  || canvas.width;
         const bh = bgImage.naturalHeight || canvas.height;
         const px = (camera.x * 0.6) % bw;
@@ -1109,8 +1110,13 @@ function drawBackground() {
         ctx.restore();
     } else {
         const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        bg.addColorStop(0, "#050b14");
-        bg.addColorStop(1, "#071e37");
+        if (activeRoom === 2) {
+            bg.addColorStop(0, "#220033"); // Purple for stage 2
+            bg.addColorStop(1, "#071e37");
+        } else {
+            bg.addColorStop(0, "#050b14");
+            bg.addColorStop(1, "#071e37");
+        }
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
@@ -1143,14 +1149,15 @@ function teleportToRoom(roomNum) {
         player.dy = -15; // Shoot up out of the hole!
         if (!hasUnlockedTentacle) {
             hasUnlockedTentacle = true;
-            abilityAlertTimer   = 4.5;
+            isAbilityModal      = true; // Show the "Press Enter" screen
         }
     } else {
         activeRoom = 1;
         roomFloor = 1200;
         roomCeil  = 0;
-        player.x = CEILING_GAP_X - 100; // Reset back near the portal
-        player.y = 80;
+        player.x = 200; // Original spawn
+        player.y = roomFloor - 100;
+        player.hp = player.maxHP;
     }
     
     // Snap camera
@@ -1334,31 +1341,39 @@ function drawTentacle() {
 }
 
 function drawAbilityAlert() {
-    if (abilityAlertTimer <= 0) return;
-    const a = Math.min(1, abilityAlertTimer);
+    if (!isAbilityModal) return;
     ctx.save();
-    ctx.globalAlpha = a;
     ctx.textAlign   = 'center';
     const cw = canvas.width, ch = canvas.height;
+    // Dim bg
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 0, cw, ch);
     // Panel
-    ctx.fillStyle = 'rgba(0,140,100,0.18)';
+    ctx.fillStyle = 'rgba(10, 30, 50, 0.95)';
     ctx.beginPath();
-    ctx.roundRect(cw/2 - 230, ch * 0.38, 460, 110, 18);
+    ctx.roundRect(cw/2 - 250, ch/2 - 90, 500, 180, 24);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,255,180,0.45)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(0,255,180,0.55)';
+    ctx.lineWidth = 2.5;
     ctx.stroke();
     // Icon + title
     ctx.fillStyle   = '#00ffcc';
     ctx.shadowColor = '#00ffcc';
-    ctx.shadowBlur  = 18;
-    ctx.font = 'bold 24px Outfit, sans-serif';
-    ctx.fillText('✨ New Ability Unlocked!', cw/2, ch * 0.38 + 42);
+    ctx.shadowBlur  = 20;
+    ctx.font = 'bold 28px Outfit, sans-serif';
+    ctx.fillText('✨ ABILITY UNLOCKED', cw/2, ch/2 - 25);
     ctx.shadowBlur = 0;
     // Description
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.font = '15px Outfit, sans-serif';
-    ctx.fillText(`🐙 Tentacle Strike  [ ${keyCodeToLabel(controls.tentacle)} ]  ·  10s cooldown`, cw/2, ch * 0.38 + 76);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '18px Outfit, sans-serif';
+    ctx.fillText(`🐙 Tentacle Strike · Key [ ${keyCodeToLabel(controls.tentacle)} ]`, cw/2, ch/2 + 15);
+    ctx.fillStyle = 'rgba(255,180,255,0.6)';
+    ctx.font = 'italic 14px Outfit, sans-serif';
+    ctx.fillText('Instantly kills all enemies in range on 10s cooldown.', cw/2, ch/2 + 45);
+    // Button
+    ctx.fillStyle = '#ffaaee';
+    ctx.font = 'bold 16px Outfit, sans-serif';
+    ctx.fillText('Press  ENTER  to Dive Deep', cw/2, ch/2 + 105);
     ctx.textAlign = 'left';
     ctx.restore();
 }
@@ -1508,7 +1523,12 @@ function gameLoop(timestamp) {
     const delta = (timestamp - lastFrameTime) / 1000;
     lastFrameTime = timestamp;
 
-    if (!isPaused && !isTeleportWarning) {
+    if (needsReset) {
+        needsReset = false;
+        teleportToRoom(1);
+    }
+
+    if (!isPaused && !isTeleportWarning && !isAbilityModal) {
         gameTime += delta;
 
         // Wind: slowly drift toward a random target, change direction every ~3s
@@ -1545,6 +1565,7 @@ function gameLoop(timestamp) {
     drawScene();
     if (isPaused) drawPauseOverlay();
     if (isTeleportWarning) drawTeleportWarning();
+    if (isAbilityModal) drawAbilityAlert();
 
     requestAnimationFrame(gameLoop);
 }
