@@ -86,8 +86,13 @@ resizeCanvas();
 window.addEventListener("resize", resizeCanvas);
 
 const keysDown = new Set();
+let isPaused = false;
+
 window.addEventListener("keydown", (e) => {
     if (screenGame.classList.contains("hidden")) return;
+    // ESC toggles pause
+    if (e.code === "Escape") { isPaused = !isPaused; return; }
+    if (isPaused) return; // Block all input while paused
     keysDown.add(e.code);
     if (e.code === controls.dash) player.tryDash();
 });
@@ -128,12 +133,20 @@ const CHUNK_WIDTH  = 800;
 // 🕐 GLOBAL GAME TIMER (seconds)
 // Used for synchronized enemy shooting
 // =========================
-let gameTime       = 0;
-let lastFrameTime  = null;
+let gameTime           = 0;
+let lastFrameTime      = null;
+let timeSinceGrounded  = 0; // seconds since player last touched the actual floor
 
 // Global shot cooldowns (all shooting enemies fire together)
 const SHOOTER_COOLDOWN = 10; // seconds — flying shooters
 let nextShooterShot    = 10; // fire first shot after 10s
+
+// =========================
+// 🪸 PLATFORM CONFIG
+// =========================
+const PLATFORM_HEIGHT      = 16;
+const BLINK_START_TIME     = 6;  // seconds airborne before blinking begins
+const BLINK_DURATION       = 3;  // seconds of blinking before platform vanishes
 
 // =========================
 // 💥 PROJECTILES
@@ -382,8 +395,9 @@ class FlyingShooter {
 // 🌍 CHUNK / WORLD SYSTEM
 // =========================
 const generatedChunks = new Set();
-let worldEnemies = [];
-let worldVents   = [];
+let worldEnemies  = [];
+let worldVents    = [];
+let worldPlatforms = [];
 
 function getChunkIndex(worldX) { return Math.floor(worldX / CHUNK_WIDTH); }
 
@@ -392,44 +406,77 @@ function generateChunk(chunkIndex) {
     generatedChunks.add(chunkIndex);
     const cx = chunkIndex * CHUNK_WIDTH;
 
-    // Chunk 0 = tutorial space with just passive bouncers
+    // ── PLATFORM DENSITY ───────────────────────────────────────────
+    // Early chunks: cramped and close (you MUST keep moving).
+    // Later chunks: larger gaps, narrower planks — more skill needed.
+    const baseCount   = Math.max(3, 8 - chunkIndex);   // 8 → 3 platforms
+    const platWidth   = () => Math.max(60, 180 - chunkIndex * 15) + Math.random() * 60;
+    const minSpacing  = Math.max(100, 80 + chunkIndex * 20);
+
+    // Place platforms at random heights across the chunk
+    let px = cx + 60;
+    let placed = 0;
+    while (placed < baseCount && px < cx + CHUNK_WIDTH - 60) {
+        const pw = platWidth();
+        // Distribute heights: early chunks cluster near floor (easier to get to),
+        // later chunks spread higher
+        const minY = chunkIndex < 3 ? 600 : 200;
+        const maxY = FLOOR_Y - 80;
+        const py   = minY + Math.random() * (maxY - minY);
+
+        worldPlatforms.push({
+            x: px, y: py,
+            width: pw,
+            height: PLATFORM_HEIGHT,
+            chunk: chunkIndex,
+            state: 'solid',  // 'solid' | 'blinking' | 'gone'
+            blinkTimer: 0,
+            // Random delay offset so platforms don't all vanish at the same second
+            blinkOffset: Math.random() * 2.5
+        });
+
+        px += pw + minSpacing + Math.random() * 80;
+        placed++;
+    }
+
+    // ── ENEMY SPAWNS ────────────────────────────────────────────────
+    // Chunk 0 = safe tutorial space
     if (chunkIndex === 0) {
-        worldEnemies.push(new PassiveBouncer(cx + 400, 900, chunkIndex));
-        worldEnemies.push(new PassiveBouncer(cx + 650, 700, chunkIndex));
+        worldEnemies.push(new PassiveBouncer(cx + 320, 950, chunkIndex));
+        worldEnemies.push(new PassiveBouncer(cx + 580, 150, chunkIndex));
+        worldEnemies.push(new GroundFish(cx + 500, FLOOR_Y, chunkIndex));
         return;
     }
 
-    // Generate a mix of enemies per chunk
     const rand = () => cx + 80 + Math.random() * (CHUNK_WIDTH - 160);
-    const randY = (min, max) => min + Math.random() * (max - min);
+    const topY = () => 80  + Math.random() * 200;
+    const midY = () => 380 + Math.random() * 370;
+    const lowY = () => 880 + Math.random() * 220;
 
-    // Passive Bouncer — always present, floats mid-air
-    worldEnemies.push(new PassiveBouncer(rand(), randY(400, 900), chunkIndex));
+    worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
+    worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
+    if (Math.random() > 0.4)
+        worldEnemies.push(new PassiveBouncer(rand(), topY(), chunkIndex));
 
-    // Ground Fish — patrols the floor
+    if (chunkIndex >= 2) worldEnemies.push(new Flyer(rand(), midY(), chunkIndex));
+    if (chunkIndex >= 4 && Math.random() > 0.5)
+        worldEnemies.push(new FlyingShooter(rand(), midY(), chunkIndex));
+
     worldEnemies.push(new GroundFish(rand(), FLOOR_Y, chunkIndex));
-    if (chunkIndex > 2) worldEnemies.push(new GroundFish(rand(), FLOOR_Y, chunkIndex));
+    worldEnemies.push(new GroundFish(rand(), FLOOR_Y, chunkIndex));
+    if (chunkIndex >= 2) worldEnemies.push(new PassiveBouncer(rand(), lowY(), chunkIndex));
+    if (chunkIndex >= 3 && Math.random() > 0.4)
+        worldEnemies.push(new Flyer(rand(), lowY(), chunkIndex));
 
-    // Flyer — appears from chunk 2+
-    if (chunkIndex >= 2) {
-        worldEnemies.push(new Flyer(rand(), randY(300, 900), chunkIndex));
-    }
-
-    // Flying Shooter — appears from chunk 4+, rarer
-    if (chunkIndex >= 4 && Math.random() > 0.4) {
-        worldEnemies.push(new FlyingShooter(rand(), randY(300, 800), chunkIndex));
-    }
-
-    // Thermal Vent — every 3 chunks
-    if (chunkIndex % 3 === 0) {
+    if (chunkIndex % 3 === 0)
         worldVents.push({ x: cx + CHUNK_WIDTH / 2, y: FLOOR_Y - 30, radius: 34, chunk: chunkIndex });
-    }
 }
 
 function cullOldChunks(currentChunk) {
     const cutoff = currentChunk - 5;
-    worldEnemies = worldEnemies.filter(e => e.chunk >= cutoff);
-    worldVents   = worldVents.filter(v => v.chunk >= cutoff);
+    worldEnemies   = worldEnemies.filter(e => e.chunk >= cutoff);
+    worldVents     = worldVents.filter(v => v.chunk >= cutoff);
+    worldPlatforms = worldPlatforms.filter(p => p.chunk >= cutoff);
     for (const c of generatedChunks) { if (c < cutoff) generatedChunks.delete(c); }
 }
 
@@ -437,6 +484,112 @@ function updateChunks() {
     const cc = getChunkIndex(player.x);
     for (let i = cc; i <= cc + 3; i++) generateChunk(i);
     cullOldChunks(cc);
+}
+
+// =========================
+// 🪸 PLATFORM SYSTEM
+// =========================
+function reviveAllPlatforms() {
+    worldPlatforms.forEach(p => {
+        p.state      = 'solid';
+        p.blinkTimer = 0;
+    });
+}
+
+function updatePlatforms(delta) {
+    // If player is touching the actual floor this frame, reset everything
+    if (player.onFloor) {
+        if (timeSinceGrounded > 0) reviveAllPlatforms();
+        timeSinceGrounded = 0;
+        return;
+    }
+    timeSinceGrounded += delta;
+
+    worldPlatforms.forEach(plat => {
+        if (plat.state === 'gone') return;
+        const blinkStart = BLINK_START_TIME + plat.blinkOffset;
+        if (timeSinceGrounded >= blinkStart + BLINK_DURATION) {
+            plat.state = 'gone';
+        } else if (timeSinceGrounded >= blinkStart) {
+            plat.state = 'blinking';
+            plat.blinkTimer += delta;
+        } else {
+            plat.state = 'solid';
+        }
+    });
+}
+
+function checkPlatformCollisions() {
+    worldPlatforms.forEach(plat => {
+        if (plat.state === 'gone') return;
+
+        const pLeft   = plat.x;
+        const pRight  = plat.x + plat.width;
+        const pTop    = plat.y;
+        const pBottom = plat.y + plat.height;
+
+        // Horizontal overlap (use 75% of radius so edge-landing feels fair)
+        const hitW = player.radius * 0.75;
+        if (player.x + hitW < pLeft)  return;
+        if (player.x - hitW > pRight) return;
+
+        // One-way landing: only snap player on top when falling
+        const playerBottom  = player.y + player.radius;
+        const prevBottom    = playerBottom - player.dy;
+
+        if (player.dy >= 0 && prevBottom <= pTop && playerBottom >= pTop) {
+            player.y       = pTop - player.radius;
+            player.dy      = 0;
+            player.canDash = true;
+            // Note: does NOT reset timeSinceGrounded — only the floor does that
+        }
+
+        // Push player out if somehow inside platform (safety)
+        if (playerBottom > pTop && playerBottom < pBottom &&
+            player.y - player.radius < pBottom) {
+            if (player.dy > 0) {
+                player.y  = pTop - player.radius;
+                player.dy = 0;
+                player.canDash = true;
+            }
+        }
+    });
+}
+
+function drawPlatforms() {
+    worldPlatforms.forEach(plat => {
+        if (plat.state === 'gone') return;
+
+        // Blinking: flicker faster as time runs out
+        if (plat.state === 'blinking') {
+            const progress  = plat.blinkTimer / BLINK_DURATION; // 0→1
+            const blinkRate = 4 + progress * 12; // 4Hz → 16Hz
+            const visible   = Math.floor(gameTime * blinkRate) % 2 === 0;
+            if (!visible) return;
+        }
+
+        const s = camera.toScreen(plat.x, plat.y);
+
+        // Color: solid = neon teal coral, blinking = warm orange warning
+        const isSolid   = plat.state === 'solid';
+        const fillColor = isSolid ? 'rgba(64, 210, 160, 0.88)' : 'rgba(255, 140, 40, 0.9)';
+        const glowColor = isSolid ? '#28c898' : '#ff9900';
+
+        // Platform body
+        ctx.fillStyle   = fillColor;
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur  = isSolid ? 10 : 20;
+        ctx.beginPath();
+        ctx.roundRect(s.x, s.y, plat.width, plat.height, 4);
+        ctx.fill();
+        ctx.shadowBlur  = 0;
+
+        // Top highlight strip
+        ctx.fillStyle = isSolid ? 'rgba(180,255,230,0.35)' : 'rgba(255,220,120,0.4)';
+        ctx.beginPath();
+        ctx.roundRect(s.x + 2, s.y + 1, plat.width - 4, 4, 2);
+        ctx.fill();
+    });
 }
 
 // =========================
@@ -451,6 +604,7 @@ const player = {
     // Health
     maxHP: 5, hp: 5,
     invincibilityFrames: 0,
+    onFloor: false, // true only when touching the actual floor (not platforms)
 
     draw() {
         const s = camera.toScreen(this.x, this.y);
@@ -493,8 +647,15 @@ const player = {
 
         this.x += this.dx; this.y += this.dy;
 
+        // ---- Floor (the actual ocean floor — resets platform timers) ----
+        this.onFloor = false;
         if (this.x - this.radius < 0)       { this.x = this.radius; this.dx = 0; }
-        if (this.y + this.radius > FLOOR_Y)  { this.y = FLOOR_Y - this.radius; this.dy = 0; this.canDash = true; }
+        if (this.y + this.radius > FLOOR_Y)  {
+            this.y       = FLOOR_Y - this.radius;
+            this.dy      = 0;
+            this.canDash = true;
+            this.onFloor = true; // ← Only the real floor sets this!
+        }
         if (this.y - this.radius < 0)        { this.y = this.radius; this.dy = 0; }
     },
 
@@ -673,6 +834,7 @@ function drawHUD() {
 function drawScene() {
     drawBackground();
     drawFloor();
+    drawPlatforms();        // Drawn below enemies so enemies appear on top
     drawVents();
     worldEnemies.forEach(e => e.draw());
     drawProjectiles();
@@ -681,31 +843,72 @@ function drawScene() {
 }
 
 // =========================
+// ⏸️ PAUSE OVERLAY
+// =========================
+function drawPauseOverlay() {
+    // Dim the scene
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Panel
+    const pw = 340, ph = 180;
+    const px = (canvas.width  - pw) / 2;
+    const py = (canvas.height - ph) / 2;
+    ctx.fillStyle = "rgba(8, 20, 40, 0.92)";
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, 18);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(88, 196, 255, 0.25)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Title
+    ctx.textAlign = "center";
+    ctx.font = "bold 32px Outfit, sans-serif";
+    ctx.fillStyle = "#58c4ff";
+    ctx.shadowColor = "#58c4ff";
+    ctx.shadowBlur  = 16;
+    ctx.fillText("PAUSED", canvas.width / 2, py + 68);
+    ctx.shadowBlur  = 0;
+
+    // Subtitle
+    ctx.font = "15px Outfit, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.fillText("Press  ESC  to resume", canvas.width / 2, py + 108);
+
+    ctx.textAlign = "left"; // Reset alignment
+}
+
+// =========================
 // 🎮 GAME LOOP
 // =========================
 function gameLoop(timestamp) {
     if (!lastFrameTime) lastFrameTime = timestamp;
-    const delta = (timestamp - lastFrameTime) / 1000; // seconds
+    const delta = (timestamp - lastFrameTime) / 1000;
     lastFrameTime = timestamp;
-    gameTime += delta;
 
-    // Update
-    player.update();
-    camera.follow(player);
-    updateChunks();
-    worldEnemies.forEach(e => e.update());
-    updateProjectiles();
+    if (!isPaused) {
+        gameTime += delta;
 
-    // Collisions
-    checkEnemyCollisions();
-    checkVentCollisions();
-    checkProjectileHits();
+        // Update
+        player.update();
+        camera.follow(player);
+        updateChunks();
+        updatePlatforms(delta);         // Decay blink timers
+        worldEnemies.forEach(e => e.update());
+        updateProjectiles();
 
-    // Global enemy shot timer
-    handleGlobalShot();
+        // Collisions
+        checkPlatformCollisions();      // Must run after player.update()
+        checkEnemyCollisions();
+        checkVentCollisions();
+        checkProjectileHits();
+        handleGlobalShot();
+    }
 
-    // Draw
+    // Always draw (so pause overlay appears over frozen frame)
     drawScene();
+    if (isPaused) drawPauseOverlay();
 
     requestAnimationFrame(gameLoop);
 }
