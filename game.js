@@ -39,6 +39,23 @@ function onYouTubeIframeAPIReady() {
 
 function onPlayerReady(event) {
     event.target.playVideo();
+    // Connect controls after player is ready
+    const muteBtn = document.getElementById("mute-btn");
+    const volumeSlider = document.getElementById("volume-slider");
+
+    muteBtn.addEventListener("click", () => {
+        if (ytPlayer.isMuted()) {
+            ytPlayer.unMute();
+            muteBtn.textContent = "🔊 Mute";
+        } else {
+            ytPlayer.mute();
+            muteBtn.textContent = "🔈 Unmute";
+        }
+    });
+
+    volumeSlider.addEventListener("input", (e) => {
+        ytPlayer.setVolume(e.target.value);
+    });
 }
 
 function onPlayerStateChange(event) {
@@ -54,7 +71,7 @@ function goToSettings() {
     renderKeyLabels();
 }
 
-// Global skip listener
+// Global skip listener - ONLY '0' closes the video
 window.addEventListener("keydown", (e) => {
     if (!screenIntro.classList.contains("hidden") && (e.key === "0" || e.code === "Digit0")) {
         console.log("Skipping trailer via key 0");
@@ -63,14 +80,8 @@ window.addEventListener("keydown", (e) => {
     }
 });
 
-// Click to skip listener
-screenIntro.addEventListener("click", () => {
-    if (!screenIntro.classList.contains("hidden")) {
-        console.log("Skipping trailer via click");
-        if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
-        goToSettings();
-    }
-});
+// Click to skip listener REMOVED as per request - now we only use '0'
+// screenIntro.addEventListener("click", () => { ... });
 
 // =========================
 // ⌨️ SETTINGS
@@ -332,7 +343,7 @@ class PassiveBouncer {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(2.5);
+        p.triggerPredatorBoost(9.5); // Boosted from 2.5
         setTimeout(() => { this.isAlive = true; }, 3000);
     }
 }
@@ -381,7 +392,7 @@ class GroundFish {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(2);
+        p.triggerPredatorBoost(9.0); // Boosted from 2.0
         setTimeout(() => { this.isAlive = true; }, 2500);
     }
 }
@@ -429,7 +440,7 @@ class Flyer {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(2.7);
+        p.triggerPredatorBoost(9.8); // Boosted from 2.7
         setTimeout(() => { this.isAlive = true; }, 2500);
     }
 }
@@ -489,7 +500,7 @@ class FlyingShooter {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(3);
+        p.triggerPredatorBoost(10.5); // Boosted from 3
         setTimeout(() => { this.isAlive = true; }, 2500);
     }
 }
@@ -1051,6 +1062,9 @@ const player = {
         const len = Math.sqrt(dirX*dirX + dirY*dirY);
         this.dx = (dirX/len) * this.dashSpeed;
         this.dy = (dirY/len) * this.dashSpeed;
+
+        // --- UPWARD DASH MULTIPLIER (1.5x) ---
+        if (dirY < 0) this.dy *= 1.5; 
     },
 
     triggerPredatorBoost(strength) {
@@ -1089,7 +1103,7 @@ function checkEnemyCollisions() {
 function checkVentCollisions() {
     worldVents.forEach(vent => {
         if (dist(player.x, player.y, vent.x, vent.y) < player.radius + vent.radius) {
-            if (player.isDashing) player.triggerPredatorBoost(3.3);
+            if (player.isDashing) player.triggerPredatorBoost(11.0); // Boosted from 3.3
         }
     });
 }

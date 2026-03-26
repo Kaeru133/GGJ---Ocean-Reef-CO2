@@ -48,6 +48,40 @@ body {
     animation: pulse 2.5s ease-in-out infinite;
 }
 
+#video-controls {
+    position: absolute;
+    bottom: 32px;
+    right: 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    padding: 10px 18px;
+    border-radius: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#mute-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: opacity 0.2s;
+}
+
+#mute-btn:hover { opacity: 0.8; }
+
+#volume-slider {
+    width: 80px;
+    height: 4px;
+    cursor: pointer;
+    accent-color: #00ffff;
+}
+
 #skip-hint kbd {
     background: rgba(255,255,255,0.15);
     border: 1px solid rgba(255,255,255,0.3);
