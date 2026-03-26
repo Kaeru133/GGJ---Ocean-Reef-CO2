@@ -12,9 +12,14 @@
 
     <!-- ===================== SCREEN 1: INTRO VIDEO ===================== -->
     <div id="screen-intro">
-        <video id="trailer-video" src="Assets/Videos/trailer.mp4" autoplay playsinline muted></video>
-        <p id="skip-hint">Press <kbd>0</kbd> to skip trailer</p>
+        <div id="player-container">
+            <div id="player"></div>
+        </div>
+        <p id="skip-hint">Press <kbd>0</kbd> or click to skip trailer</p>
     </div>
+
+    <!-- YouTube Iframe API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
 
     <!-- ===================== SCREEN 2: SETTINGS / MAIN MENU ===================== -->
     <div id="screen-settings" class="hidden">

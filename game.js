@@ -6,14 +6,46 @@
 const screenIntro    = document.getElementById("screen-intro");
 const screenSettings = document.getElementById("screen-settings");
 const screenGame     = document.getElementById("screen-game");
-const trailerVideo   = document.getElementById("trailer-video");
+let ytPlayer;
 const bindingHint    = document.getElementById("binding-hint");
 const startGameBtn   = document.getElementById("start-game-btn");
 
 // =========================
-// 🎬 INTRO
+// 🎬 INTRO & CONTROLS
 // =========================
 const controls = { up:"KeyW", left:"KeyA", down:"KeyS", right:"KeyD", dash:"Space", tentacle:"KeyE" };
+
+function onYouTubeIframeAPIReady() {
+    ytPlayer = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: 'pUr6m6UIjgU',
+        playerVars: {
+            'autoplay': 1,
+            'controls': 0,
+            'modestbranding': 1,
+            'rel': 0,
+            'showinfo': 0,
+            'iv_load_policy': 3,
+            'mute': 1,
+            'playsinline': 1
+        },
+        events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange
+        }
+    });
+}
+
+function onPlayerReady(event) {
+    event.target.playVideo();
+}
+
+function onPlayerStateChange(event) {
+    if (event.data === YT.PlayerState.ENDED) {
+        goToSettings();
+    }
+}
 
 function goToSettings() {
     console.log("Transitioning to settings screen...");
@@ -26,7 +58,7 @@ function goToSettings() {
 window.addEventListener("keydown", (e) => {
     if (!screenIntro.classList.contains("hidden") && (e.key === "0" || e.code === "Digit0")) {
         console.log("Skipping trailer via key 0");
-        trailerVideo.pause(); 
+        if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); 
         goToSettings();
     }
 });
@@ -35,43 +67,10 @@ window.addEventListener("keydown", (e) => {
 screenIntro.addEventListener("click", () => {
     if (!screenIntro.classList.contains("hidden")) {
         console.log("Skipping trailer via click");
-        trailerVideo.pause();
+        if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
         goToSettings();
     }
 });
-
-// Video events
-trailerVideo.addEventListener("ended", () => {
-    console.log("Trailer ended naturally");
-    goToSettings();
-});
-
-trailerVideo.addEventListener("error", (e) => {
-    console.error("Video error detected:", trailerVideo.error);
-    setTimeout(goToSettings, 500);
-});
-
-// Explicit play attempt
-console.log("Attempting to play video: " + trailerVideo.src);
-const playPromise = trailerVideo.play();
-if (playPromise !== undefined) {
-    playPromise.then(_ => {
-        console.log("Autoplay started successfully");
-    }).catch(error => {
-        console.warn("Autoplay was prevented. Waiting for user interaction or error.");
-        // If autoplay fails, we wait for the user to press '0' or for an error.
-        // Or we could show a 'Play' button.
-    });
-}
-
-// Fallback: Skip intro if video hasn't started or ended within 3 seconds 
-// (Useful if browser blocks it entirely or it's a broken LFS file)
-setTimeout(() => {
-    if (!screenIntro.classList.contains("hidden") && trailerVideo.paused) {
-        console.warn("Video stuck or not playing, auto-skipping intro...");
-        goToSettings();
-    }
-}, 3000);
 
 // =========================
 // ⌨️ SETTINGS
@@ -942,9 +941,9 @@ const player = {
     x: 200, y: roomFloor - 60,
     radius: 16, dx: 0, dy: 0,
     gravity: 0.28, friction: 0.92, speed: 0.22,
-    jumpPower: 8.5, // <--- CHANGE JUMP HEIGHT HERE (8.5 is a good default)
+    dashSpeed: 8.5, // <--- CHANGE DASH / JUMP HEIGHT HERE
     isDashing: false, canDash: true, dashTimer: 0,
-    dashSpeed: 3.3, dashDuration: 15,
+    dashDuration: 15,
     maxHP: 5, hp: 5,
     invincibilityFrames: 0,
     onFloor: false,
@@ -1041,12 +1040,6 @@ const player = {
     },
 
     tryDash() {
-        // If on floor, Spacebar acts as a JUMP
-        if (this.onFloor) {
-            this.jump();
-            return;
-        }
-
         if (!this.canDash || this.isDashing) return;
         this.isDashing = true; this.canDash = false; this.dashTimer = this.dashDuration;
         let dirX = 0, dirY = 0;
@@ -1058,12 +1051,6 @@ const player = {
         const len = Math.sqrt(dirX*dirX + dirY*dirY);
         this.dx = (dirX/len) * this.dashSpeed;
         this.dy = (dirY/len) * this.dashSpeed;
-    },
-
-    jump() {
-        this.dy = -this.jumpPower;
-        this.onFloor = false;
-        this.canDash = true; // Allow dashing after jumping
     },
 
     triggerPredatorBoost(strength) {
