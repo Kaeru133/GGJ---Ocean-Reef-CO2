@@ -22,12 +22,12 @@ function onYouTubeIframeAPIReady() {
         videoId: 'pUr6m6UIjgU',
         playerVars: {
             'autoplay': 1,
-            'controls': 0,
+            'controls': 1, // ENABLE NATIVE CONTROLS
             'modestbranding': 1,
             'rel': 0,
             'showinfo': 0,
             'iv_load_policy': 3,
-            'mute': 1,
+            'mute': 0, // DONT MUTE BY DEFAULT IF THEY CAN CLICK
             'playsinline': 1
         },
         events: {
@@ -39,39 +39,6 @@ function onYouTubeIframeAPIReady() {
 
 function onPlayerReady(event) {
     event.target.playVideo();
-    // Connect controls after player is ready
-    const muteBtn = document.getElementById("mute-btn");
-    const volumeSlider = document.getElementById("volume-slider");
-
-    muteBtn.addEventListener("click", (e) => {
-        e.stopPropagation(); // Don't trigger the general screen click
-        toggleMute();
-    });
-
-    volumeSlider.addEventListener("input", (e) => {
-        ytPlayer.setVolume(e.target.value);
-        if (ytPlayer.isMuted() && e.target.value > 0) {
-            toggleMute();
-        }
-    });
-
-    function toggleMute() {
-        if (ytPlayer.isMuted()) {
-            ytPlayer.unMute();
-            muteBtn.textContent = "🔊 Mute";
-        } else {
-            ytPlayer.mute();
-            muteBtn.textContent = "🔈 Unmute";
-        }
-    }
-
-    // Auto-unmute when clicking ANYWHERE on the trailer screen
-    screenIntro.addEventListener("click", () => {
-        if (!screenIntro.classList.contains("hidden") && ytPlayer && ytPlayer.isMuted()) {
-            console.log("Auto-unmuting on user interaction");
-            toggleMute();
-        }
-    });
 }
 
 function onPlayerStateChange(event) {

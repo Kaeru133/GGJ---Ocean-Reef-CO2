@@ -35,7 +35,7 @@ body {
 #player {
     width: 100%;
     height: 100%;
-    pointer-events: none; /* Allows our skip click listener to work on the container */
+    pointer-events: auto; /* Allow direct interaction with YouTube controls */
 }
 
 #skip-hint {
@@ -46,51 +46,8 @@ body {
     color: rgba(255, 255, 255, 0.55);
     letter-spacing: 0.05em;
     animation: pulse 2.5s ease-in-out infinite;
-}
-
-#video-controls {
-    position: absolute;
-    bottom: 32px;
-    right: 32px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(12px);
-    padding: 12px 24px;
-    border-radius: 40px;
-    border: 1px solid rgba(0, 255, 255, 0.3);
-    box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
-    transition: all 0.3s ease;
-}
-
-#video-controls:hover {
-    border-color: rgba(0, 255, 255, 0.6);
-    box-shadow: 0 0 30px rgba(0, 255, 255, 0.2);
-    transform: scale(1.02);
-}
-
-#mute-btn {
-    background: none;
-    border: none;
-    color: #fff;
-    font-family: inherit;
-    font-size: 0.9rem;
-    cursor: pointer;
-    font-weight: 700;
-    transition: color 0.2s;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-#mute-btn:hover { color: #00ffff; }
-
-#volume-slider {
-    width: 80px;
-    height: 4px;
-    cursor: pointer;
-    accent-color: #00ffff;
+    z-index: 10; /* Ensure hint is above video if needed */
+    pointer-events: none; /* Hint doesn't block clicks */
 }
 
 #skip-hint kbd {
