@@ -343,7 +343,7 @@ class PassiveBouncer {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(9.5); // Boosted from 2.5
+        p.triggerPredatorBoost(19.0); // Doubled from 9.5
         setTimeout(() => { this.isAlive = true; }, 3000);
     }
 }
@@ -392,7 +392,7 @@ class GroundFish {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(9.0); // Boosted from 2.0
+        p.triggerPredatorBoost(18.0); // Doubled from 9.0
         setTimeout(() => { this.isAlive = true; }, 2500);
     }
 }
@@ -440,7 +440,7 @@ class Flyer {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(9.8); // Boosted from 2.7
+        p.triggerPredatorBoost(19.6); // Doubled from 9.8
         setTimeout(() => { this.isAlive = true; }, 2500);
     }
 }
@@ -500,7 +500,7 @@ class FlyingShooter {
     }
     onHit(p) {
         this.isAlive = false;
-        p.triggerPredatorBoost(10.5); // Boosted from 3
+        p.triggerPredatorBoost(21.0); // Doubled from 10.5
         setTimeout(() => { this.isAlive = true; }, 2500);
     }
 }
@@ -951,7 +951,7 @@ function checkLaserHits() {
 const player = {
     x: 200, y: roomFloor - 60,
     radius: 16, dx: 0, dy: 0,
-    gravity: 0.28, friction: 0.92, speed: 0.22,
+    gravity: 0.28, friction: 0.92, speed: 0.66, // Increased 3x (1.5x * 2) from 0.22
     dashSpeed: 8.5, // <--- CHANGE DASH / JUMP HEIGHT HERE
     isDashing: false, canDash: true, dashTimer: 0,
     dashDuration: 15,
@@ -1103,7 +1103,7 @@ function checkEnemyCollisions() {
 function checkVentCollisions() {
     worldVents.forEach(vent => {
         if (dist(player.x, player.y, vent.x, vent.y) < player.radius + vent.radius) {
-            if (player.isDashing) player.triggerPredatorBoost(11.0); // Boosted from 3.3
+            if (player.isDashing) player.triggerPredatorBoost(22.0); // Doubled from 11.0
         }
     });
 }
