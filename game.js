@@ -43,7 +43,19 @@ function onPlayerReady(event) {
     const muteBtn = document.getElementById("mute-btn");
     const volumeSlider = document.getElementById("volume-slider");
 
-    muteBtn.addEventListener("click", () => {
+    muteBtn.addEventListener("click", (e) => {
+        e.stopPropagation(); // Don't trigger the general screen click
+        toggleMute();
+    });
+
+    volumeSlider.addEventListener("input", (e) => {
+        ytPlayer.setVolume(e.target.value);
+        if (ytPlayer.isMuted() && e.target.value > 0) {
+            toggleMute();
+        }
+    });
+
+    function toggleMute() {
         if (ytPlayer.isMuted()) {
             ytPlayer.unMute();
             muteBtn.textContent = "🔊 Mute";
@@ -51,10 +63,14 @@ function onPlayerReady(event) {
             ytPlayer.mute();
             muteBtn.textContent = "🔈 Unmute";
         }
-    });
+    }
 
-    volumeSlider.addEventListener("input", (e) => {
-        ytPlayer.setVolume(e.target.value);
+    // Auto-unmute when clicking ANYWHERE on the trailer screen
+    screenIntro.addEventListener("click", () => {
+        if (!screenIntro.classList.contains("hidden") && ytPlayer && ytPlayer.isMuted()) {
+            console.log("Auto-unmuting on user interaction");
+            toggleMute();
+        }
     });
 }
 
@@ -71,17 +87,34 @@ function goToSettings() {
     renderKeyLabels();
 }
 
-// Global skip listener - ONLY '0' closes the video
+// Global skip listener - ONLY '0' (Pressed twice) closes the video
+let zeroPressCount = 0;
+let zeroPressTimer = null;
+
 window.addEventListener("keydown", (e) => {
     if (!screenIntro.classList.contains("hidden") && (e.key === "0" || e.code === "Digit0")) {
-        console.log("Skipping trailer via key 0");
-        if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); 
-        goToSettings();
+        zeroPressCount++;
+        console.log("Zero pressed " + zeroPressCount + " times");
+        
+        if (zeroPressCount === 1) {
+            // Show a visual hint that they need to press again
+            document.getElementById("skip-hint").innerHTML = 'Press <kbd>0</kbd> again to skip';
+            
+            // Reset count if they don't press again within 800ms
+            clearTimeout(zeroPressTimer);
+            zeroPressTimer = setTimeout(() => {
+                zeroPressCount = 0;
+                document.getElementById("skip-hint").innerHTML = 'Press <kbd>0</kbd> twice to skip trailer';
+            }, 800);
+        }
+
+        if (zeroPressCount >= 2) {
+            console.log("Skipping trailer via double-zero");
+            if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); 
+            goToSettings();
+        }
     }
 });
-
-// Click to skip listener REMOVED as per request - now we only use '0'
-// screenIntro.addEventListener("click", () => { ... });
 
 // =========================
 // ⌨️ SETTINGS
